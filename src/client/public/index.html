@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Package Manager Tools</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+        }
+
+        .container {
+            width: 70%;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e1e4e8;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            color: #586069;
+            position: relative;
+        }
+
+        .tab.active {
+            color: #2196F3;
+            font-weight: bold;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #2196F3;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .section {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e1e4e8;
+            flex: 1;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #ccc;
+        }
+
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+            margin-left: 10px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            background: white;
+        }
+
+        .error { color: red; }
+        .success { color: green; }
+
+        /* Log Section Styles */
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+        }
+
+        .log-entry.success { color: #28a745; }
+        .log-entry.error { color: #dc3545; }
+        .log-entry.warning { color: #ffc107; }
+        .log-entry.info { color: #17a2b8; }
+        .log-entry.debug { color: #6c757d; }
+        .log-entry.request { color: #9c27b0; }
+        .log-entry.response { color: #4caf50; }
+
+        .log-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .log-btn {
+            padding: 8px 16px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .log-btn:hover {
+            background: #5a6268;
+        }
+
+        .log-btn i {
+            font-size: 16px;
+        }
+
+        /* Add this to your existing styles */
+        .manager-container {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+        }
+
+        .package-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .package-card {
+            background: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 15px;
+            position: relative;
+        }
+
+        .package-card h4 {
+            margin: 0 0 10px 0;
+            color: #24292e;
+        }
+
+        .package-desc {
+            color: #586069;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .package-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid #e1e4e8;
+        }
+
+        .package-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .refresh-btn {
+            padding: 4px 8px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .refresh-btn:hover {
+            background: #5a6268;
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .refresh-btn:active .refresh-icon {
+            transform: rotate(180deg);
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .installed {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .not-installed {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .version {
+            color: #586069;
+            font-size: 12px;
+        }
+
+        .package-toggle {
+            width: 50px;
+            height: 26px;
+            margin: 0;
+        }
+
+        .package-toggle .slider {
+            height: 26px;
+        }
+
+        .package-toggle .slider:before {
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+        }
+
+        .package-toggle input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" onclick="openTab('managers')">Package Managers</button>
+            <button class="tab" onclick="openTab('status')">Package Status</button>
+            <button class="tab" onclick="openTab('logs')">Logs</button>
+        </div>
+
+        <div id="managers" class="tab-content active">
+            <div class="manager-container">
+                <div class="section">
+                    <h3>Winget</h3>
+                    <button id="checkWinget">Check Version</button>
+                    <div id="wingetResult" class="result"></div>
+                </div>
+
+                <div class="section" id="chocoSection">
+                    <h3>Chocolatey</h3>
+                    <button id="checkChoco">Check Version</button>
+                    <label class="toggle">
+                        <input type="checkbox" id="chocoToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <div id="chocoResult" class="result"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="status" class="tab-content">
+            <div class="section">
+                <div class="package-grid">
+                    <!-- Packages will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="logs" class="tab-content">
+            <div class="log-controls">
+                <button class="log-btn" onclick="copyLogs()">
+                    <i>📋</i> Copy Logs
+                </button>
+                <button class="log-btn" onclick="downloadLogs()">
+                    <i>⬇️</i> Download Logs
+                </button>
+                <button class="log-btn" onclick="clearLogs()">
+                    <i>🗑️</i> Clear Logs
+                </button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <!-- Logs will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.getElementsByClassName('tab-content');
+            for (let content of tabContents) {
+                content.classList.remove('active');
+            }
+
+            // Remove active class from all tabs
+            const tabs = document.getElementsByClassName('tab');
+            for (let tab of tabs) {
+                tab.classList.remove('active');
+            }
+
+            // Show the selected tab content
+            document.getElementById(tabName).classList.add('active');
+            // Add active class to the clicked tab
+            event.currentTarget.classList.add('active');
+
+            // Load packages when switching to status tab
+            if (tabName === 'status') {
+                loadPackages();
+            }
+        }
+
+        // Function to add log entry to the log container
+        function addLogEntry(message, type) {
+            const logContainer = document.getElementById('logContainer');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type.toLowerCase()}`;
+            
+            // Add timestamp
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function copyLogs() {
+            const logContainer = document.getElementById('logContainer');
+            const logText = Array.from(logContainer.children)
+                .map(entry => entry.textContent)
+                .join('\n');
+            
+            navigator.clipboard.writeText(logText).then(() => {
+                alert('Logs copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy logs:', err);
+                alert('Failed to copy logs');
+            });
+        }
+
+        function downloadLogs() {
+            const logContainer = document.getElementById('logContainer');
+            const logText = Array.from(logContainer.children)
+                .map(entry => entry.textContent)
+                .join('\n');
+            
+            const blob = new Blob([logText], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            
+            a.href = url;
+            a.download = `logs_${new Date().toISOString().slice(0,19).replace(/[:]/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }
+
+        function clearLogs() {
+            if (confirm('Are you sure you want to clear all logs?')) {
+                const logContainer = document.getElementById('logContainer');
+                logContainer.innerHTML = '';
+                addLogEntry('Logs cleared', 'INFO');
+            }
+        }
+
+        const wingetBtn = document.getElementById('checkWinget');
+        const chocoBtn = document.getElementById('checkChoco');
+        const chocoToggle = document.getElementById('chocoToggle');
+
+        // Check Winget Version
+        async function checkWinget() {
+            const result = document.getElementById('wingetResult');
+            wingetBtn.disabled = true;
+            try {
+                const response = await fetch('http://localhost:9000/api/winget-version');
+                const data = await response.json();
+                if (data.version && !data.version.includes('Error')) {
+                    result.textContent = `Version: ${data.version}`;
+                    result.className = 'result success';
+                    await fetch('http://localhost:9000/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Winget version check successful: ${data.version}`,
+                            type: 'SUCCESS',
+                            source: 'GUI'
+                        })
+                    });
+                } else {
+                    result.textContent = 'Winget not installed';
+                    result.className = 'result error';
+                    await fetch('http://localhost:9000/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: 'Winget not installed',
+                            type: 'ERROR',
+                            source: 'GUI'
+                        })
+                    });
+                }
+            } catch (error) {
+                result.textContent = 'Error checking version';
+                result.className = 'result error';
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error checking Winget version: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+            }
+            wingetBtn.disabled = false;
+        }
+
+        // Check Chocolatey Version
+        async function checkChoco() {
+            const result = document.getElementById('chocoResult');
+            chocoBtn.disabled = true;
+            try {
+                const response = await fetch('http://localhost:9000/api/choco-version');
+                const data = await response.json();
+                
+                if (data.version.installed) {
+                    result.textContent = `Version: ${data.version.version}`;
+                    result.className = 'result success';
+                    chocoToggle.checked = true;
+                    await fetch('http://localhost:9000/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Chocolatey version check successful: ${data.version.version}`,
+                            type: 'SUCCESS',
+                            source: 'GUI'
+                        })
+                    });
+                } else {
+                    result.textContent = 'Chocolatey is not installed';
+                    result.className = 'result error';
+                    chocoToggle.checked = false;
+                    await fetch('http://localhost:9000/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: 'Chocolatey is not installed',
+                            type: 'WARNING',
+                            source: 'GUI'
+                        })
+                    });
+                }
+            } catch (error) {
+                result.textContent = 'Error checking version';
+                result.className = 'result error';
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error checking Chocolatey version: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+            }
+            chocoBtn.disabled = false;
+        }
+
+        // Handle Chocolatey Installation Toggle
+        chocoToggle.addEventListener('change', async () => {
+            const result = document.getElementById('chocoResult');
+            const endpoint = chocoToggle.checked ? 'install' : 'uninstall';
+            const action = chocoToggle.checked ? 'Installing' : 'Uninstalling';
+            
+            result.textContent = `${action}...`;
+            result.className = 'result';
+            
+            await fetch('http://localhost:9000/api/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: `${action} Chocolatey...`,
+                    type: 'INFO',
+                    source: 'GUI'
+                })
+            });
+            
+            try {
+                // Perform installation/uninstallation
+                const response = await fetch(`http://localhost:9000/api/choco-${endpoint}`);
+                const data = await response.json();
+                
+                // Wait a moment for the operation to complete
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Verify installation status
+                const verifyResponse = await fetch('http://localhost:9000/api/choco-version');
+                const verifyData = await verifyResponse.json();
+                
+                const isInstalled = verifyData.version.installed;
+                const shouldBeInstalled = endpoint === 'install';
+                
+                if (isInstalled === shouldBeInstalled) {
+                    // Operation was successful
+                    await checkChoco(); // This will update UI and log success
+                } else {
+                    // Operation failed
+                    result.textContent = `${endpoint} failed`;
+                    result.className = 'result error';
+                    chocoToggle.checked = !chocoToggle.checked;
+                    await fetch('http://localhost:9000/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Chocolatey ${endpoint} failed - verification failed`,
+                            type: 'ERROR',
+                            source: 'GUI'
+                        })
+                    });
+                }
+            } catch (error) {
+                result.textContent = `${endpoint} failed`;
+                result.className = 'result error';
+                chocoToggle.checked = !chocoToggle.checked;
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error during Chocolatey ${endpoint}: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+            }
+        });
+
+        // Event Listeners
+        wingetBtn.addEventListener('click', checkWinget);
+        chocoBtn.addEventListener('click', checkChoco);
+
+        // Add this to your existing JavaScript
+        async function loadPackages() {
+            const packageGrid = document.querySelector('.package-grid');
+            packageGrid.innerHTML = 'Loading packages...';
+
+            try {
+                const response = await fetch('http://localhost:9000/api/packages-list');
+                const data = await response.json();
+
+                if (data.success) {
+                    packageGrid.innerHTML = '';
+                    
+                    for (const pkg of data.packages) {
+                        const card = document.createElement('div');
+                        card.className = 'package-card';
+                        
+                        // Initial card content
+                        card.innerHTML = `
+                            <h4>${pkg.app_name}</h4>
+                            <div class="package-desc">${pkg.app_desc}</div>
+                            <div class="package-status">
+                                <div class="status-info">
+                                    <span class="status-badge">Checking...</span>
+                                    <span class="version"></span>
+                                </div>
+                                <div class="package-controls">
+                                    <button class="refresh-btn" onclick="refreshPackage('${pkg.app_id}', this)">
+                                        <span class="refresh-icon">↻</span>
+                                    </button>
+                                    <label class="toggle package-toggle">
+                                        <input type="checkbox" data-app-id="${pkg.app_id}">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        `;
+                        
+                        packageGrid.appendChild(card);
+                        
+                        // Get toggle element
+                        const toggle = card.querySelector('input[type="checkbox"]');
+                        toggle.addEventListener('change', () => handlePackageToggle(pkg.app_id, toggle));
+                        
+                        // Check installation status
+                        checkPackageStatus(pkg.app_id, card);
+                    }
+                } else {
+                    packageGrid.innerHTML = 'Error loading packages list';
+                }
+            } catch (error) {
+                packageGrid.innerHTML = 'Error loading packages list';
+                console.error('Error:', error);
+            }
+        }
+
+        async function handlePackageToggle(appId, toggle) {
+            const card = toggle.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const versionSpan = card.querySelector('.version');
+            
+            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+            toggle.disabled = true;
+            
+            try {
+                const action = toggle.checked ? 'install' : 'uninstall';
+                const response = await fetch(`http://localhost:9000/api/package-${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId })
+                });
+                
+                // Wait for the operation to complete
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Force refresh the package status
+                await checkPackageStatus(appId, card, true);
+                
+                // Log the action
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Package ${action} completed for: ${appId}`,
+                        type: 'INFO',
+                        source: 'GUI'
+                    })
+                });
+            } catch (error) {
+                statusBadge.textContent = 'Error';
+                toggle.checked = !toggle.checked;
+                console.error('Error:', error);
+                
+                // Log the error
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error during package ${action}: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+            } finally {
+            toggle.disabled = false;
+            }
+        }
+
+        async function checkPackageStatus(appId, card, refresh = false) {
+            try {
+                const response = await fetch('http://localhost:9000/api/package-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ appId, refresh })
+                });
+                
+                const data = await response.json();
+                const statusBadge = card.querySelector('.status-badge');
+                const versionSpan = card.querySelector('.version');
+                const toggle = card.querySelector('input[type="checkbox"]');
+                
+                if (data.installed) {
+                    statusBadge.textContent = 'Installed';
+                    statusBadge.className = 'status-badge installed';
+                    versionSpan.textContent = data.version || '';
+                    toggle.checked = true;
+                } else {
+                    statusBadge.textContent = 'Not Installed';
+                    statusBadge.className = 'status-badge not-installed';
+                    versionSpan.textContent = '';
+                    toggle.checked = false;
+                }
+            } catch (error) {
+                const statusBadge = card.querySelector('.status-badge');
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge not-installed';
+            }
+        }
+
+        // Update the refresh function
+        async function refreshPackage(appId, button) {
+            const card = button.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const refreshIcon = button.querySelector('.refresh-icon');
+            
+            // Disable button and show loading state
+            button.disabled = true;
+            statusBadge.textContent = 'Checking...';
+            refreshIcon.style.transform = 'rotate(360deg)';
+            
+            try {
+            await checkPackageStatus(appId, card, true);
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Refreshed status for package: ${appId}`,
+                        type: 'INFO',
+                        source: 'GUI'
+                    })
+                });
+            } catch (error) {
+                console.error('Error refreshing package status:', error);
+            } finally {
+                // Reset button state
+            button.disabled = false;
+                refreshIcon.style.transform = 'rotate(0deg)';
+            }
+        }
+    </script>
+</body>
+</html> 
