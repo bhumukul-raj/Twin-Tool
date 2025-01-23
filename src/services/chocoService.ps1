@@ -29,9 +29,14 @@ function Get-ChocoVersion {
 function Install-Chocolatey {
     Write-DebugLog "Starting Chocolatey installation..." "DEBUG"
     try {
+        # Clean up any previous installation
+        if (Test-Path "C:\ProgramData\chocolatey") {
+            Write-DebugLog "Removing existing Chocolatey files..." "DEBUG"
+            Remove-Item "C:\ProgramData\chocolatey" -Recurse -Force
+        }
         # Try winget first
         Write-DebugLog "Attempting installation via winget..." "DEBUG"
-        winget install chocolatey
+        winget install --id chocolatey.chocolatey --source winget
         Start-Sleep -Seconds 2
         
         # Verify installation
@@ -40,6 +45,12 @@ function Install-Chocolatey {
         if ($status.installed) {
             Write-DebugLog "Chocolatey installed successfully via winget" "SUCCESS"
             return "Success"
+        }
+        
+        # Clean up any previous installation
+        if (Test-Path "C:\ProgramData\chocolatey") {
+            Write-DebugLog "Removing existing Chocolatey files..." "DEBUG"
+            Remove-Item "C:\ProgramData\chocolatey" -Recurse -Force
         }
 
         # If winget fails, try web installer
