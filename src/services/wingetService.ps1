@@ -1,3 +1,6 @@
+# Winget Service Module
+# Provides core functionality for interacting with Windows Package Manager (winget)
+
 #Requires -Version 5.0
 #Requires -RunAsAdministrator
 
@@ -7,43 +10,59 @@ function Write-DebugLog {
     Write-Host "[$timestamp] WINGET $Type : $Message"
 }
 
+<#
+.SYNOPSIS
+    Checks if winget is installed on the system
+.DESCRIPTION
+    Attempts to find winget command and returns boolean indicating availability
+.RETURNS
+    Boolean indicating whether winget is installed
+#>
 function Test-WingetInstalled {
-    Write-DebugLog "Checking if Winget is installed..." "DEBUG"
+    Write-TerminalLog "Checking if Winget is installed..." "DEBUG"
     try {
         $null = Get-Command winget -ErrorAction Stop
-        Write-DebugLog "Winget found on system" "SUCCESS"
+        Write-TerminalLog "Winget found on system" "SUCCESS"
         return $true
     }
     catch {
-        Write-DebugLog "Winget not found on system" "WARNING"
+        Write-TerminalLog "Winget not found on system" "WARNING"
         return $false
     }
 }
 
+<#
+.SYNOPSIS
+    Gets the installed version of winget
+.DESCRIPTION
+    Executes winget --version and parses the output
+.RETURNS
+    String containing version number or error message
+#>
 function Get-WingetVersion {
-    Write-DebugLog "Getting Winget version..." "DEBUG"
+    Write-TerminalLog "Getting Winget version..." "DEBUG"
     try {
         if (-not (Test-WingetInstalled)) {
-            Write-DebugLog "Winget is not installed" "ERROR"
+            Write-TerminalLog "Winget is not installed" "ERROR"
             return "Error: Winget is not installed"
         }
 
-        Write-DebugLog "Executing winget --version..." "DEBUG"
+        Write-TerminalLog "Executing winget --version..." "DEBUG"
         $process = Start-Process -FilePath "winget" -ArgumentList "--version" -Wait -NoNewWindow -RedirectStandardOutput "$env:TEMP\winget_version.txt" -PassThru
         
         if ($process.ExitCode -eq 0) {
             $version = Get-Content "$env:TEMP\winget_version.txt"
             Remove-Item "$env:TEMP\winget_version.txt" -Force
             $version = $version.Trim()
-            Write-DebugLog "Winget version: $version" "SUCCESS"
+            Write-TerminalLog "Winget version: $version" "SUCCESS"
             return $version
         } else {
-            Write-DebugLog "Winget command failed with exit code: $($process.ExitCode)" "ERROR"
+            Write-TerminalLog "Winget command failed with exit code: $($process.ExitCode)" "ERROR"
             return "Error: Winget command failed"
         }
     }
     catch {
-        Write-DebugLog "Error getting Winget version: $_" "ERROR"
+        Write-TerminalLog "Error getting Winget version: $_" "ERROR"
         return "Error: Unable to get winget version - $($_.Exception.Message)"
     }
 } 

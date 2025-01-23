@@ -325,13 +325,88 @@
             align-items: center;
             gap: 10px;
         }
+
+        .status-controls {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .bulk-check-btn {
+            padding: 8px 16px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .bulk-check-btn:hover {
+            background: #1976D2;
+        }
+
+        .bulk-check-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .bulk-check-btn .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .bulk-check-btn:disabled .refresh-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .bulk-refresh-btn {
+            padding: 8px 16px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .bulk-refresh-btn:hover {
+            background: #1976D2;
+        }
+
+        .bulk-refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .bulk-refresh-btn .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .bulk-refresh-btn:disabled .refresh-icon {
+            animation: spin 1s linear infinite;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="tabs">
             <button class="tab active" onclick="openTab('managers')">Package Managers</button>
-            <button class="tab" onclick="openTab('status')">Package Status</button>
+            <button class="tab" onclick="openTab('status')">Winget Package Status</button>
             <button class="tab" onclick="openTab('logs')">Logs</button>
         </div>
 
@@ -357,6 +432,11 @@
 
         <div id="status" class="tab-content">
             <div class="section">
+                <div class="status-controls">
+                    <button class="bulk-refresh-btn" onclick="forceBulkStatusCheck()">
+                        <span class="refresh-icon">↻</span> Refresh All
+                    </button>
+                </div>
                 <div class="package-grid">
                     <!-- Packages will be loaded here -->
                 </div>
@@ -382,6 +462,9 @@
     </div>
 
     <script>
+        // Add this variable at the top of script section
+        let hasInitializedPackages = false;
+
         function openTab(tabName) {
             // Hide all tab contents
             const tabContents = document.getElementsByClassName('tab-content');
@@ -400,9 +483,10 @@
             // Add active class to the clicked tab
             event.currentTarget.classList.add('active');
 
-            // Load packages when switching to status tab
-            if (tabName === 'status') {
+            // Load packages only if it's the status tab and hasn't been initialized
+            if (tabName === 'status' && !hasInitializedPackages) {
                 loadPackages();
+                hasInitializedPackages = true;
             }
         }
 
@@ -636,23 +720,54 @@
         wingetBtn.addEventListener('click', checkWinget);
         chocoBtn.addEventListener('click', checkChoco);
 
-        // Add this to your existing JavaScript
+        /**
+         * Loads and displays all packages in the Winget Package Status tab
+         * Creates cards for each package with status, version, and controls
+         * Performs one-time bulk status check during initial load
+         */
         async function loadPackages() {
             const packageGrid = document.querySelector('.package-grid');
             packageGrid.innerHTML = 'Loading packages...';
 
             try {
-                const response = await fetch('http://localhost:9000/api/packages-list');
+                // Check if we have cached package data
+                const cachedData = sessionStorage.getItem('packageData');
+                if (cachedData) {
+                    displayPackages(JSON.parse(cachedData));
+                    return;
+                }
+
+                // Fetch package list from server
+                const response = await fetch('http://localhost:9000/api/winget/packages-list');
                 const data = await response.json();
 
                 if (data.success) {
+                    // Cache the package list
+                    sessionStorage.setItem('packageData', JSON.stringify(data));
+                    displayPackages(data);
+                } else {
+                    packageGrid.innerHTML = 'Error loading packages list';
+                }
+            } catch (error) {
+                packageGrid.innerHTML = 'Error loading packages list';
+                console.error('Error:', error);
+            }
+        }
+
+        /**
+         * Displays packages and their status from data
+         * @param {Object} data - Package data to display
+         */
+        async function displayPackages(data) {
+            const packageGrid = document.querySelector('.package-grid');
                     packageGrid.innerHTML = '';
                     
+                    // Create a card for each package
                     for (const pkg of data.packages) {
                         const card = document.createElement('div');
                         card.className = 'package-card';
                         
-                        // Initial card content
+                        // Set up card HTML with package info and controls
                         card.innerHTML = `
                             <h4>${pkg.app_name}</h4>
                             <div class="package-desc">${pkg.app_desc}</div>
@@ -675,55 +790,223 @@
                         
                         packageGrid.appendChild(card);
                         
-                        // Get toggle element
+                        // Set up toggle button event handler
                         const toggle = card.querySelector('input[type="checkbox"]');
                         toggle.addEventListener('change', () => handlePackageToggle(pkg.app_id, toggle));
-                        
-                        // Check installation status
-                        checkPackageStatus(pkg.app_id, card);
                     }
-                } else {
-                    packageGrid.innerHTML = 'Error loading packages list';
-                }
-            } catch (error) {
-                packageGrid.innerHTML = 'Error loading packages list';
-                console.error('Error:', error);
+
+            // Check if we have cached status data
+            const cachedStatus = sessionStorage.getItem('packageStatus');
+            if (cachedStatus) {
+                updatePackageStatusFromCache(JSON.parse(cachedStatus));
+            } else {
+                    // Perform one-time bulk status check
+                    await performInitialBulkCheck();
             }
         }
 
+        /**
+         * Updates Winget Package Status from cached data
+         * @param {Object} statusData - Cached status data
+         */
+        function updatePackageStatusFromCache(statusData) {
+            const packageCards = document.querySelectorAll('.package-card');
+            packageCards.forEach(card => {
+                const appId = card.querySelector('input[type="checkbox"]').dataset.appId;
+                const status = statusData[appId];
+                if (status) {
+                    const statusBadge = card.querySelector('.status-badge');
+                    const versionSpan = card.querySelector('.version');
+                    const toggle = card.querySelector('input[type="checkbox"]');
+                    
+                    if (status.installed) {
+                        statusBadge.textContent = 'Installed';
+                        statusBadge.className = 'status-badge installed';
+                        versionSpan.textContent = status.version || '';
+                        toggle.checked = true;
+                } else {
+                        statusBadge.textContent = 'Not Installed';
+                        statusBadge.className = 'status-badge not-installed';
+                        versionSpan.textContent = '';
+                        toggle.checked = false;
+                }
+            }
+            });
+        }
+
+        /**
+         * Performs initial bulk status check for all packages
+         * This function is called only once during initial load
+         */
+        async function performInitialBulkCheck() {
+            const packageCards = document.querySelectorAll('.package-card');
+            const statusCache = {};
+            
+            try {
+                // Get all package IDs
+                const packageIds = Array.from(packageCards).map(card => 
+                    card.querySelector('input[type="checkbox"]').dataset.appId
+                );
+                
+                // Check status for each package
+                for (const appId of packageIds) {
+                    const card = Array.from(packageCards).find(card => 
+                        card.querySelector('input[type="checkbox"]').dataset.appId === appId
+                    );
+                    
+                    const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ appId, refresh: true })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    // Cache the status
+                    statusCache[appId] = data;
+                    
+                    // Update UI for this package
+                    const statusBadge = card.querySelector('.status-badge');
+                    const versionSpan = card.querySelector('.version');
+                    const toggle = card.querySelector('input[type="checkbox"]');
+                    
+                    if (data.installed) {
+                        statusBadge.textContent = 'Installed';
+                        statusBadge.className = 'status-badge installed';
+                        versionSpan.textContent = data.version || '';
+                        toggle.checked = true;
+                    } else {
+                        statusBadge.textContent = 'Not Installed';
+                        statusBadge.className = 'status-badge not-installed';
+                        versionSpan.textContent = '';
+                        toggle.checked = false;
+                    }
+                }
+                
+                // Cache the status data
+                sessionStorage.setItem('packageStatus', JSON.stringify(statusCache));
+                
+                // Log the initial bulk check
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: 'Initial bulk Winget Package Status check completed',
+                        type: 'INFO',
+                        source: 'GUI'
+                    })
+                });
+                
+            } catch (error) {
+                console.error('Error during initial bulk status check:', error);
+                
+                // Log the error
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error during initial bulk status check: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+                
+                // Show error in UI
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Error';
+                    statusBadge.className = 'status-badge not-installed';
+                });
+            }
+        }
+
+        /**
+         * Handles package installation/uninstallation when toggle button is clicked
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} toggle - The toggle button element
+         */
         async function handlePackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
             const versionSpan = card.querySelector('.version');
             
+            // Update UI to show operation in progress
             statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
             toggle.disabled = true;
             
             try {
+                // Send install/uninstall request to server
                 const action = toggle.checked ? 'install' : 'uninstall';
-                const response = await fetch(`http://localhost:9000/api/package-${action}`, {
+                const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ appId })
                 });
+
+                // Poll for status changes with timeout
+                let attempts = 0;
+                const maxAttempts = 30; // 30 attempts * 5 seconds = 150 seconds (2.5 minutes) maximum wait
+                const pollInterval = 5000; // 5 seconds between checks
+                let isComplete = false;
+
+                while (!isComplete && attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                    
+                    // Check Winget Package Status
+                    const statusResponse = await fetch('http://localhost:9000/api/winget/single-package-status', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ appId, refresh: true })
+                    });
+                    
+                    const data = await statusResponse.json();
+                    
+                    // If status matches desired state, we're done
+                    if (data.installed === toggle.checked) {
+                        isComplete = true;
+                        
+                        // Update UI based on final status
+                        if (data.installed) {
+                            statusBadge.textContent = 'Installed';
+                            statusBadge.className = 'status-badge installed';
+                            versionSpan.textContent = data.version || '';
+                            toggle.checked = true;
+                        } else {
+                            statusBadge.textContent = 'Not Installed';
+                            statusBadge.className = 'status-badge not-installed';
+                            versionSpan.textContent = '';
+                            toggle.checked = false;
+                        }
+                        
+                        // Log success
+                        await fetch('http://localhost:9000/api/log', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: `Package ${action} completed for: ${appId}`,
+                                type: 'INFO',
+                                source: 'GUI'
+                            })
+                        });
+                    } else {
+                        // Update status to show still working
+                        statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                    }
+                    
+                    attempts++;
+                }
                 
-                // Wait for the operation to complete
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // If we timed out
+                if (!isComplete) {
+                    throw new Error(`${action} operation timed out after ${maxAttempts * pollInterval / 1000} seconds`);
+                }
                 
-                // Force refresh the package status
-                await checkPackageStatus(appId, card, true);
-                
-                // Log the action
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Package ${action} completed for: ${appId}`,
-                        type: 'INFO',
-                        source: 'GUI'
-                    })
-                });
             } catch (error) {
+                // Handle errors and revert UI state
                 statusBadge.textContent = 'Error';
                 toggle.checked = !toggle.checked;
                 console.error('Error:', error);
@@ -739,25 +1022,43 @@
                     })
                 });
             } finally {
-            toggle.disabled = false;
+                // Re-enable toggle button
+                toggle.disabled = false;
             }
         }
 
-        async function checkPackageStatus(appId, card, refresh = false) {
+        /**
+         * Refreshes the status of a single package
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} button - The refresh button element
+         */
+        async function refreshPackage(appId, button) {
+            const card = button.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const refreshIcon = button.querySelector('.refresh-icon');
+            
+            // Show loading state
+            button.disabled = true;
+            statusBadge.textContent = 'Checking...';
+            refreshIcon.style.transform = 'rotate(360deg)';
+            
             try {
-                const response = await fetch('http://localhost:9000/api/package-status', {
+                // Get fresh Winget Package Status
+                const response = await fetch('http://localhost:9000/api/winget/single-package-status', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ appId, refresh })
+                    body: JSON.stringify({ appId, refresh: true })
                 });
                 
                 const data = await response.json();
-                const statusBadge = card.querySelector('.status-badge');
+                
+                // Get UI elements to update
                 const versionSpan = card.querySelector('.version');
                 const toggle = card.querySelector('input[type="checkbox"]');
                 
+                // Update UI based on new status
                 if (data.installed) {
                     statusBadge.textContent = 'Installed';
                     statusBadge.className = 'status-badge installed';
@@ -769,26 +1070,8 @@
                     versionSpan.textContent = '';
                     toggle.checked = false;
                 }
-            } catch (error) {
-                const statusBadge = card.querySelector('.status-badge');
-                statusBadge.textContent = 'Error';
-                statusBadge.className = 'status-badge not-installed';
-            }
-        }
 
-        // Update the refresh function
-        async function refreshPackage(appId, button) {
-            const card = button.closest('.package-card');
-            const statusBadge = card.querySelector('.status-badge');
-            const refreshIcon = button.querySelector('.refresh-icon');
-            
-            // Disable button and show loading state
-            button.disabled = true;
-            statusBadge.textContent = 'Checking...';
-            refreshIcon.style.transform = 'rotate(360deg)';
-            
-            try {
-            await checkPackageStatus(appId, card, true);
+                // Log the refresh action
                 await fetch('http://localhost:9000/api/log', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -799,11 +1082,71 @@
                     })
                 });
             } catch (error) {
-                console.error('Error refreshing package status:', error);
+                // Handle errors
+                console.error('Error refreshing Winget Package Status:', error);
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge not-installed';
             } finally {
                 // Reset button state
-            button.disabled = false;
+                button.disabled = false;
                 refreshIcon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        /**
+         * Forces a bulk status check for all packages
+         * Updates the cache and UI with fresh data
+         */
+        async function forceBulkStatusCheck() {
+            const bulkRefreshBtn = document.querySelector('.bulk-refresh-btn');
+            const packageCards = document.querySelectorAll('.package-card');
+            
+            // Disable button and show loading state
+            bulkRefreshBtn.disabled = true;
+            
+            try {
+                // Update all cards to loading state
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Checking...';
+                });
+                
+                // Perform bulk status check
+                await performInitialBulkCheck();
+                
+                // Log the forced bulk check
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: 'Forced bulk Winget Package Status check completed',
+                        type: 'INFO',
+                        source: 'GUI'
+                    })
+                });
+            } catch (error) {
+                console.error('Error during forced bulk status check:', error);
+                
+                // Log the error
+                await fetch('http://localhost:9000/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Error during forced bulk status check: ${error.message}`,
+                        type: 'ERROR',
+                        source: 'GUI'
+                    })
+                });
+                
+                // Show error in UI
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Error';
+                    statusBadge.className = 'status-badge not-installed';
+                });
+            } finally {
+                // Re-enable button
+                bulkRefreshBtn.disabled = false;
             }
         }
     </script>

@@ -1,179 +1,282 @@
+# Server Module
+# Provides HTTP server functionality for the package management GUI
+# Handles API endpoints for both Winget and Chocolatey operations
+
 #Requires -Version 5.0
 #Requires -RunAsAdministrator
 
-# Import services
+# Import required service modules
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootPath = Split-Path -Parent (Split-Path -Parent $scriptPath)
-. "$rootPath\src\services\wingetService.ps1"
-. "$rootPath\src\services\chocoService.ps1"
-. "$rootPath\src\services\logService.ps1"
-. "$rootPath\src\services\winget_package_status_Service.ps1"
+. "$rootPath\src\services\logService.ps1"          # Logging functionality
+. "$rootPath\src\services\wingetService.ps1"       # Winget operations
+. "$rootPath\src\services\chocoService.ps1"        # Chocolatey operations
+. "$rootPath\src\services\winget_package_status_Service.ps1"  # Package status management
 
-Write-TerminalLog "Starting server initialization..."
+Write-TerminalLog "Starting server initialization..." "INFO"
 
-# Find available port
-$ports = 9000..9010
-$selectedPort = $null
-
-Write-TerminalLog "Scanning ports 9000-9010 for availability..."
-foreach ($port in $ports) {
-    $portInUse = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-    if (-not $portInUse) {
-        $selectedPort = $port
-        Write-TerminalLog "Found available port: $selectedPort"
-        break
-    }
-    else {
+<#
+.SYNOPSIS
+    Finds an available port for the server
+.DESCRIPTION
+    Scans ports in the range 9000-9010 to find an unused port
+    for the HTTP server to listen on
+.RETURNS
+    Selected port number or exits if no ports are available
+#>
+function Get-AvailablePort {
+    Write-TerminalLog "Scanning ports 9000-9010 for availability..." "DEBUG"
+    $ports = 9000..9010
+    
+    foreach ($port in $ports) {
+        $portInUse = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+        if (-not $portInUse) {
+            Write-TerminalLog "Found available port: $port" "SUCCESS"
+            return $port
+        }
         Write-TerminalLog "Port $port is in use" "DEBUG"
     }
-}
-
-if (-not $selectedPort) {
+    
     Write-TerminalLog "No available ports found in range 9000-9010" "ERROR"
     exit
 }
 
-# Create and start listener
-Write-TerminalLog "Creating HTTP listener on port $selectedPort..."
-$Listener = New-Object System.Net.HttpListener
-$Listener.Prefixes.Add("http://localhost:$selectedPort/")
+# Initialize server configuration
+$script:port = Get-AvailablePort
+$script:url = "http://localhost:$port/"
+$script:listener = $null
 
-try {
-    $Listener.Start()
-    Write-TerminalLog "Server started successfully on http://localhost:$selectedPort/" "SUCCESS"
-
-    while ($Listener.IsListening) {
-        $Context = $Listener.GetContext()
-        $Request = $Context.Request
-        $Response = $Context.Response
+<#
+.SYNOPSIS
+    Initializes and starts the HTTP server for handling GUI requests
+.DESCRIPTION
+    Creates an HTTP listener on the available port and handles incoming requests
+    for package management operations. Supports both Winget and Chocolatey
+    operations through a RESTful API interface.
+#>
+function Start-PackageServer {
+    Write-TerminalLog "Creating HTTP listener on port $port..." "DEBUG"
+    
+    try {
+        # Initialize HTTP listener
+        $script:listener = New-Object System.Net.HttpListener
+        $script:listener.Prefixes.Add($url)
         
-        Write-TerminalLog "Received $($Request.HttpMethod) request: $($Request.Url.LocalPath)" "REQUEST"
+        # Start listening for requests
+        $script:listener.Start()
+        Write-TerminalLog "Server started successfully at $url" "SUCCESS"
         
-        # CORS headers
-        $Response.Headers.Add("Access-Control-Allow-Origin", "*")
-        $Response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS")
-        $Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
-        
-        if ($Request.HttpMethod -eq "OPTIONS") {
-            $Response.StatusCode = 200
-            $Response.Close()
-            Write-TerminalLog "Handled OPTIONS request" "DEBUG"
-            continue
-        }
-
-        # Handle endpoints
-        $ResponseData = switch ($Request.Url.LocalPath) {
-            "/api/winget-version" { 
-                Write-TerminalLog "Checking Winget version..." "DEBUG"
-                $version = Get-WingetVersion
-                Write-TerminalLog "Winget version result: $version" "DEBUG"
-                @{ version = $version }
-            }
-            "/api/choco-version" { 
-                Write-TerminalLog "Checking Chocolatey version..." "DEBUG"
-                $version = Get-ChocoVersion
-                Write-TerminalLog "Chocolatey version result: $($version | ConvertTo-Json)" "DEBUG"
-                @{ version = $version }
-            }
-            "/api/choco-install" { 
-                Write-TerminalLog "Installing Chocolatey..." "DEBUG"
-                $result = Install-Chocolatey
-                Write-TerminalLog "Chocolatey installation result: $result" "DEBUG"
-                @{ message = $result }
-            }
-            "/api/choco-uninstall" { 
-                Write-TerminalLog "Uninstalling Chocolatey..." "DEBUG"
-                $result = Uninstall-Chocolatey
-                Write-TerminalLog "Chocolatey uninstallation result: $result" "DEBUG"
-                @{ message = $result }
-            }
-            "/api/log" {
-                if ($Request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($Request.InputStream)
-                    $body = $reader.ReadToEnd()
-                    $logData = $body | ConvertFrom-Json
+        # Main request handling loop
+        while ($script:listener.IsListening) {
+            try {
+                # Wait for and get request context
+                $context = $script:listener.GetContext()
+                $request = $context.Request
+                $response = $context.Response
+                
+                # Add CORS headers
+                $response.Headers.Add("Access-Control-Allow-Origin", "*")
+                $response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+                
+                # Handle OPTIONS requests for CORS
+                if ($request.HttpMethod -eq "OPTIONS") {
+                    $response.StatusCode = 200
+                    $response.Close()
+                    Write-TerminalLog "Handled OPTIONS request" "DEBUG"
+                    continue
+                }
+                
+                # Log incoming request details
+                Write-TerminalLog "Received $($request.HttpMethod) request: $($request.RawUrl)" "REQUEST"
+                
+                # Handle request based on endpoint path
+                $result = switch -Regex ($request.RawUrl) {
+                    # Winget Version Endpoint
+                    '/api/winget-version' {
+                        Write-TerminalLog "Processing Winget version check request" "DEBUG"
+                        @{
+                            version = Get-WingetVersion
+                        }
+                    }
                     
-                    Write-GuiLog -Message $logData.message -Type $logData.type
-                    @{ status = "logged" }
+                    # Winget Package List Endpoint
+                    '/api/winget/packages-list' {
+                        Write-TerminalLog "Processing packages list request" "DEBUG"
+                        Get-PackagesList
+                    }
+                    
+                    # Winget Bulk Package Status Endpoint
+                    '/api/winget/bulk-package-status' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing bulk package status request for: $($data.appId)" "DEBUG"
+                            @{
+                                status = Get-BulkPackageInstallationStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                            }
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Winget Single Package Status Endpoint
+                    '/api/winget/single-package-status' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing single package status request for: $($data.appId)" "DEBUG"
+                            @{
+                                status = Get-SinglePackageInstallStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                            }
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Winget Package Installation Endpoint
+                    '/api/winget/install-package' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing package installation request for: $($data.appId)" "DEBUG"
+                            Install-WingetPackage -AppId $data.appId
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Winget Package Uninstallation Endpoint
+                    '/api/winget/uninstall-package' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing package uninstallation request for: $($data.appId)" "DEBUG"
+                            Uninstall-WingetPackage -AppId $data.appId
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Chocolatey Version Endpoint
+                    '/api/choco-version' {
+                        Write-TerminalLog "Processing Chocolatey version check request" "DEBUG"
+                        @{
+                            version = Get-ChocoVersion
+                        }
+                    }
+                    
+                    # Chocolatey Installation Endpoint
+                    '/api/choco-install' {
+                        Write-TerminalLog "Processing Chocolatey installation request" "DEBUG"
+                        @{
+                            result = Install-Chocolatey
+                        }
+                    }
+                    
+                    # Chocolatey Uninstallation Endpoint
+                    '/api/choco-uninstall' {
+                        Write-TerminalLog "Processing Chocolatey uninstallation request" "DEBUG"
+                        @{
+                            result = Uninstall-Chocolatey
+                        }
+                    }
+                    
+                    # GUI Logging Endpoint
+                    '/api/log' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-GuiLog -Message $data.message -Type $data.type
+                            @{
+                                success = $true
+                            }
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Handle Unknown Endpoints
+                    default {
+                        Write-TerminalLog "Received request for unknown endpoint: $($request.RawUrl)" "WARNING"
+                        $response.StatusCode = 404
+                        @{
+                            error = "Endpoint not found"
+                        }
+                    }
                 }
-                else {
-                    $Response.StatusCode = 405
-                    @{ error = "Method not allowed" }
-                }
+                
+                # Prepare and send response
+                $jsonResponse = $result | ConvertTo-Json -Depth 10
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($jsonResponse)
+                $response.ContentLength64 = $buffer.Length
+                $response.ContentType = "application/json"
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.Close()
+                
+                # Log response details
+                Write-TerminalLog "Sent response: $($response.StatusCode)" "RESPONSE"
             }
-            "/api/packages-list" {
-                Write-TerminalLog "Fetching packages list..." "DEBUG"
-                $result = Get-PackagesList
-                Write-TerminalLog "Packages list fetched" "DEBUG"
-                $result
-            }
-            "/api/package-status" {
-                if ($Request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($Request.InputStream)
-                    $body = $reader.ReadToEnd() | ConvertFrom-Json
-                    Write-TerminalLog "Checking status for package: $($body.appId)" "DEBUG"
-                    $status = Get-PackageInstallStatus -AppId $body.appId -ForceRefresh:$body.refresh
-                    Write-TerminalLog "Package status retrieved" "DEBUG"
-                    $status
-                }
-                else {
-                    $Response.StatusCode = 405
-                    @{ error = "Method not allowed" }
-                }
-            }
-            "/api/package-install" {
-                if ($Request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($Request.InputStream)
-                    $body = $reader.ReadToEnd() | ConvertFrom-Json
-                    Write-TerminalLog "Installing package: $($body.appId)" "DEBUG"
-                    $result = winget install --exact --id $body.appId --accept-source-agreements --accept-package-agreements
-                    @{ success = $true }
-                }
-                else {
-                    $Response.StatusCode = 405
-                    @{ error = "Method not allowed" }
-                }
-            }
-            "/api/package-uninstall" {
-                if ($Request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($Request.InputStream)
-                    $body = $reader.ReadToEnd() | ConvertFrom-Json
-                    Write-TerminalLog "Uninstalling package: $($body.appId)" "DEBUG"
-                    $result = winget uninstall --exact --id $body.appId
-                    @{ success = $true }
-                }
-                else {
-                    $Response.StatusCode = 405
-                    @{ error = "Method not allowed" }
-                }
-            }
-            default { 
-                Write-TerminalLog "Invalid endpoint requested: $($Request.Url.LocalPath)" "WARNING"
-                $Response.StatusCode = 404
-                @{ error = "Endpoint not found" }
+            catch {
+                # Handle request processing errors
+                Write-TerminalLog "Error handling request: $($_.Exception.Message)" "ERROR"
+                Write-TerminalLog "Stack trace: $($_.Exception.StackTrace)" "DEBUG"
+                
+                # Send error response
+                $errorResponse = @{
+                    error = $_.Exception.Message
+                    stackTrace = $_.Exception.StackTrace
+                } | ConvertTo-Json
+                
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($errorResponse)
+                $response.StatusCode = 500
+                $response.ContentLength64 = $buffer.Length
+                $response.ContentType = "application/json"
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.Close()
             }
         }
+    }
+    catch {
+        # Handle server startup/runtime errors
+        Write-TerminalLog "Critical server error: $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Stack trace: $($_.Exception.StackTrace)" "DEBUG"
+    }
+    finally {
+        # Ensure server is properly shut down
+        if ($script:listener) {
+            $script:listener.Stop()
+            Write-TerminalLog "Server stopped" "INFO"
+        }
+    }
+}
 
-        # Send response
-        $JsonResponse = $ResponseData | ConvertTo-Json
-        $Buffer = [System.Text.Encoding]::UTF8.GetBytes($JsonResponse)
-        $Response.ContentLength64 = $Buffer.Length
-        $Response.ContentType = "application/json"
-        $Response.OutputStream.Write($Buffer, 0, $Buffer.Length)
-        $Response.Close()
-        
-        Write-TerminalLog "Response sent: $JsonResponse" "RESPONSE"
+<#
+.SYNOPSIS
+    Gracefully stops the HTTP server
+.DESCRIPTION
+    Stops the HTTP listener and performs cleanup operations
+    to ensure proper server shutdown
+#>
+function Stop-PackageServer {
+    Write-TerminalLog "Stopping package management server..." "INFO"
+    try {
+        if ($script:listener) {
+            $script:listener.Stop()
+            $script:listener.Close()
+            Write-TerminalLog "Server stopped successfully" "SUCCESS"
+        }
+    }
+    catch {
+        Write-TerminalLog "Error stopping server: $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Stack trace: $($_.Exception.StackTrace)" "DEBUG"
     }
 }
-catch {
-    Write-TerminalLog "Server error: $_" "ERROR"
-    Write-Error "Server error: $_"
-}
-finally {
-    if ($Listener.IsListening) {
-        Write-TerminalLog "Shutting down server..." "INFO"
-        $Listener.Stop()
-        $Listener.Close()
-        Write-TerminalLog "Server shutdown complete" "INFO"
-    }
-} 
+
+# Start the server when this script is run
+Start-PackageServer 
