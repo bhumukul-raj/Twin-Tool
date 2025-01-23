@@ -462,10 +462,19 @@
     </div>
 
     <script>
-        // Add this variable at the top of script section
+        // Global state to track package initialization
         let hasInitializedPackages = false;
 
+        /**
+         * Tab Management
+         * Handles switching between different tabs (Package Managers, Package Status, Logs)
+         * Also triggers initial package loading when status tab is first opened
+         * @param {string} tabName - Name of the tab to open
+         */
         function openTab(tabName) {
+            // Log tab switch
+            addLogEntry(`Switching to ${tabName} tab`, 'INFO');
+
             // Hide all tab contents
             const tabContents = document.getElementsByClassName('tab-content');
             for (let content of tabContents) {
@@ -485,12 +494,18 @@
 
             // Load packages only if it's the status tab and hasn't been initialized
             if (tabName === 'status' && !hasInitializedPackages) {
+                addLogEntry('First time opening Status tab - initializing package list', 'INFO');
                 loadPackages();
                 hasInitializedPackages = true;
             }
         }
 
-        // Function to add log entry to the log container
+        /**
+         * Log Entry Management
+         * Adds a new log entry to the log container with timestamp and styling
+         * @param {string} message - The log message to display
+         * @param {string} type - The type of log (INFO, DEBUG, SUCCESS, WARNING, ERROR, REQUEST, RESPONSE)
+         */
         function addLogEntry(message, type) {
             const logContainer = document.getElementById('logContainer');
             const logEntry = document.createElement('div');
@@ -502,23 +517,39 @@
             
             logContainer.appendChild(logEntry);
             logContainer.scrollTop = logContainer.scrollHeight;
+
+            // Send log to server for persistence
+            fetch('http://localhost:9000/api/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: message,
+                    type: type,
+                    source: 'GUI'
+                })
+            }).catch(err => console.error('Failed to send log to server:', err));
         }
 
+        /**
+         * Log Management Functions
+         * Handle copying, downloading, and clearing of logs
+         */
         function copyLogs() {
+            addLogEntry('Copying logs to clipboard', 'INFO');
             const logContainer = document.getElementById('logContainer');
             const logText = Array.from(logContainer.children)
                 .map(entry => entry.textContent)
                 .join('\n');
             
             navigator.clipboard.writeText(logText).then(() => {
-                alert('Logs copied to clipboard!');
+                addLogEntry('Logs copied successfully', 'SUCCESS');
             }).catch(err => {
-                console.error('Failed to copy logs:', err);
-                alert('Failed to copy logs');
+                addLogEntry(`Failed to copy logs: ${err.message}`, 'ERROR');
             });
         }
 
         function downloadLogs() {
+            addLogEntry('Preparing logs for download', 'INFO');
             const logContainer = document.getElementById('logContainer');
             const logText = Array.from(logContainer.children)
                 .map(entry => entry.textContent)
@@ -528,79 +559,69 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             
+            const timestamp = new Date().toISOString().slice(0,19).replace(/[:]/g, '-');
             a.href = url;
-            a.download = `logs_${new Date().toISOString().slice(0,19).replace(/[:]/g, '-')}.txt`;
+            a.download = `logs_${timestamp}.txt`;
             document.body.appendChild(a);
             a.click();
             
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
+            addLogEntry('Logs downloaded successfully', 'SUCCESS');
         }
 
         function clearLogs() {
             if (confirm('Are you sure you want to clear all logs?')) {
                 const logContainer = document.getElementById('logContainer');
                 logContainer.innerHTML = '';
-                addLogEntry('Logs cleared', 'INFO');
+                addLogEntry('Log history cleared', 'INFO');
             }
         }
 
+        // Initialize UI elements
         const wingetBtn = document.getElementById('checkWinget');
         const chocoBtn = document.getElementById('checkChoco');
         const chocoToggle = document.getElementById('chocoToggle');
 
-        // Check Winget Version
+        /**
+         * Winget Version Check
+         * Queries the server for Winget version and updates UI accordingly
+         */
         async function checkWinget() {
             const result = document.getElementById('wingetResult');
             wingetBtn.disabled = true;
+            addLogEntry('Checking Winget version...', 'INFO');
+            
             try {
                 const response = await fetch('http://localhost:9000/api/winget-version');
                 const data = await response.json();
+                
                 if (data.version && !data.version.includes('Error')) {
                     result.textContent = `Version: ${data.version}`;
                     result.className = 'result success';
-                    await fetch('http://localhost:9000/api/log', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Winget version check successful: ${data.version}`,
-                            type: 'SUCCESS',
-                            source: 'GUI'
-                        })
-                    });
+                    addLogEntry(`Winget version check successful: ${data.version}`, 'SUCCESS');
                 } else {
                     result.textContent = 'Winget not installed';
                     result.className = 'result error';
-                    await fetch('http://localhost:9000/api/log', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: 'Winget not installed',
-                            type: 'ERROR',
-                            source: 'GUI'
-                        })
-                    });
+                    addLogEntry('Winget not installed', 'ERROR');
                 }
             } catch (error) {
                 result.textContent = 'Error checking version';
                 result.className = 'result error';
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error checking Winget version: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry(`Error checking Winget version: ${error.message}`, 'ERROR');
             }
             wingetBtn.disabled = false;
         }
 
-        // Check Chocolatey Version
+        /**
+         * Chocolatey Version Check
+         * Queries the server for Chocolatey version and updates UI accordingly
+         */
         async function checkChoco() {
             const result = document.getElementById('chocoResult');
             chocoBtn.disabled = true;
+            addLogEntry('Checking Chocolatey version...', 'INFO');
+            
             try {
                 const response = await fetch('http://localhost:9000/api/choco-version');
                 const data = await response.json();
@@ -609,46 +630,25 @@
                     result.textContent = `Version: ${data.version.version}`;
                     result.className = 'result success';
                     chocoToggle.checked = true;
-                    await fetch('http://localhost:9000/api/log', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Chocolatey version check successful: ${data.version.version}`,
-                            type: 'SUCCESS',
-                            source: 'GUI'
-                        })
-                    });
+                    addLogEntry(`Chocolatey version check successful: ${data.version.version}`, 'SUCCESS');
                 } else {
                     result.textContent = 'Chocolatey is not installed';
                     result.className = 'result error';
                     chocoToggle.checked = false;
-                    await fetch('http://localhost:9000/api/log', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: 'Chocolatey is not installed',
-                            type: 'WARNING',
-                            source: 'GUI'
-                        })
-                    });
+                    addLogEntry('Chocolatey is not installed', 'WARNING');
                 }
             } catch (error) {
                 result.textContent = 'Error checking version';
                 result.className = 'result error';
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error checking Chocolatey version: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry(`Error checking Chocolatey version: ${error.message}`, 'ERROR');
             }
             chocoBtn.disabled = false;
         }
 
-        // Handle Chocolatey Installation Toggle
+        /**
+         * Chocolatey Installation Toggle Handler
+         * Manages installation/uninstallation of Chocolatey based on toggle state
+         */
         chocoToggle.addEventListener('change', async () => {
             const result = document.getElementById('chocoResult');
             const endpoint = chocoToggle.checked ? 'install' : 'uninstall';
@@ -656,23 +656,14 @@
             
             result.textContent = `${action}...`;
             result.className = 'result';
-            
-            await fetch('http://localhost:9000/api/log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: `${action} Chocolatey...`,
-                    type: 'INFO',
-                    source: 'GUI'
-                })
-            });
+            addLogEntry(`${action} Chocolatey...`, 'INFO');
             
             try {
                 // Perform installation/uninstallation
                 const response = await fetch(`http://localhost:9000/api/choco-${endpoint}`);
                 const data = await response.json();
                 
-                // Wait a moment for the operation to complete
+                // Wait for operation to complete
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // Verify installation status
@@ -683,56 +674,44 @@
                 const shouldBeInstalled = endpoint === 'install';
                 
                 if (isInstalled === shouldBeInstalled) {
-                    // Operation was successful
-                    await checkChoco(); // This will update UI and log success
+                    await checkChoco(); // Updates UI and logs success
                 } else {
-                    // Operation failed
                     result.textContent = `${endpoint} failed`;
                     result.className = 'result error';
                     chocoToggle.checked = !chocoToggle.checked;
-                    await fetch('http://localhost:9000/api/log', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Chocolatey ${endpoint} failed - verification failed`,
-                            type: 'ERROR',
-                            source: 'GUI'
-                        })
-                    });
+                    addLogEntry(`Chocolatey ${endpoint} failed - verification failed`, 'ERROR');
                 }
             } catch (error) {
                 result.textContent = `${endpoint} failed`;
                 result.className = 'result error';
                 chocoToggle.checked = !chocoToggle.checked;
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error during Chocolatey ${endpoint}: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry(`Error during Chocolatey ${endpoint}: ${error.message}`, 'ERROR');
             }
         });
 
-        // Event Listeners
+        // Event Listeners for version check buttons
         wingetBtn.addEventListener('click', checkWinget);
         chocoBtn.addEventListener('click', checkChoco);
 
         /**
+         * Package Management Functions
+         * Handle loading, displaying, and managing package status
+         */
+
+        /**
          * Loads and displays all packages in the Winget Package Status tab
          * Creates cards for each package with status, version, and controls
-         * Performs one-time bulk status check during initial load
          */
         async function loadPackages() {
             const packageGrid = document.querySelector('.package-grid');
             packageGrid.innerHTML = 'Loading packages...';
+            addLogEntry('Loading package list...', 'INFO');
 
             try {
-                // Check if we have cached package data
+                // Check for cached package data
                 const cachedData = sessionStorage.getItem('packageData');
                 if (cachedData) {
+                    addLogEntry('Using cached package data', 'INFO');
                     displayPackages(JSON.parse(cachedData));
                     return;
                 }
@@ -742,15 +721,16 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Cache the package list
                     sessionStorage.setItem('packageData', JSON.stringify(data));
+                    addLogEntry(`Successfully loaded ${data.packages.length} packages`, 'SUCCESS');
                     displayPackages(data);
                 } else {
                     packageGrid.innerHTML = 'Error loading packages list';
+                    addLogEntry('Failed to load packages list', 'ERROR');
                 }
             } catch (error) {
                 packageGrid.innerHTML = 'Error loading packages list';
-                console.error('Error:', error);
+                addLogEntry(`Error loading packages: ${error.message}`, 'ERROR');
             }
         }
 
@@ -760,60 +740,65 @@
          */
         async function displayPackages(data) {
             const packageGrid = document.querySelector('.package-grid');
-                    packageGrid.innerHTML = '';
-                    
-                    // Create a card for each package
-                    for (const pkg of data.packages) {
-                        const card = document.createElement('div');
-                        card.className = 'package-card';
-                        
-                        // Set up card HTML with package info and controls
-                        card.innerHTML = `
-                            <h4>${pkg.app_name}</h4>
-                            <div class="package-desc">${pkg.app_desc}</div>
-                            <div class="package-status">
-                                <div class="status-info">
-                                    <span class="status-badge">Checking...</span>
-                                    <span class="version"></span>
-                                </div>
-                                <div class="package-controls">
-                                    <button class="refresh-btn" onclick="refreshPackage('${pkg.app_id}', this)">
-                                        <span class="refresh-icon">↻</span>
-                                    </button>
-                                    <label class="toggle package-toggle">
-                                        <input type="checkbox" data-app-id="${pkg.app_id}">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        `;
-                        
-                        packageGrid.appendChild(card);
-                        
-                        // Set up toggle button event handler
-                        const toggle = card.querySelector('input[type="checkbox"]');
-                        toggle.addEventListener('change', () => handlePackageToggle(pkg.app_id, toggle));
-                    }
+            packageGrid.innerHTML = '';
+            addLogEntry('Rendering package cards...', 'DEBUG');
+            
+            // Create a card for each package
+            for (const pkg of data.packages) {
+                const card = document.createElement('div');
+                card.className = 'package-card';
+                
+                // Set up card HTML with package info and controls
+                card.innerHTML = `
+                    <h4>${pkg.app_name}</h4>
+                    <div class="package-desc">${pkg.app_desc}</div>
+                    <div class="package-status">
+                        <div class="status-info">
+                            <span class="status-badge">Checking...</span>
+                            <span class="version"></span>
+                        </div>
+                        <div class="package-controls">
+                            <button class="refresh-btn" onclick="refreshPackage('${pkg.app_id}', this)">
+                                <span class="refresh-icon">↻</span>
+                            </button>
+                            <label class="toggle package-toggle">
+                                <input type="checkbox" data-app-id="${pkg.app_id}">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                `;
+                
+                packageGrid.appendChild(card);
+                
+                // Set up toggle button event handler
+                const toggle = card.querySelector('input[type="checkbox"]');
+                toggle.addEventListener('change', () => handlePackageToggle(pkg.app_id, toggle));
+            }
 
-            // Check if we have cached status data
+            // Check for cached status data
             const cachedStatus = sessionStorage.getItem('packageStatus');
             if (cachedStatus) {
+                addLogEntry('Using cached package status data', 'INFO');
                 updatePackageStatusFromCache(JSON.parse(cachedStatus));
             } else {
-                    // Perform one-time bulk status check
-                    await performInitialBulkCheck();
+                addLogEntry('Performing initial bulk status check...', 'INFO');
+                await performInitialBulkCheck();
             }
         }
 
         /**
-         * Updates Winget Package Status from cached data
+         * Updates package status from cached data
          * @param {Object} statusData - Cached status data
          */
         function updatePackageStatusFromCache(statusData) {
+            addLogEntry('Updating package status from cache...', 'DEBUG');
             const packageCards = document.querySelectorAll('.package-card');
+            
             packageCards.forEach(card => {
                 const appId = card.querySelector('input[type="checkbox"]').dataset.appId;
                 const status = statusData[appId];
+                
                 if (status) {
                     const statusBadge = card.querySelector('.status-badge');
                     const versionSpan = card.querySelector('.version');
@@ -824,35 +809,38 @@
                         statusBadge.className = 'status-badge installed';
                         versionSpan.textContent = status.version || '';
                         toggle.checked = true;
-                } else {
+                    } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
                         versionSpan.textContent = '';
                         toggle.checked = false;
+                    }
                 }
-            }
             });
+            addLogEntry('Package status updated from cache', 'SUCCESS');
         }
 
         /**
          * Performs initial bulk status check for all packages
-         * This function is called only once during initial load
+         * Called only once during initial load
          */
         async function performInitialBulkCheck() {
             const packageCards = document.querySelectorAll('.package-card');
             const statusCache = {};
             
             try {
-                // Get all package IDs
                 const packageIds = Array.from(packageCards).map(card => 
                     card.querySelector('input[type="checkbox"]').dataset.appId
                 );
                 
-                // Check status for each package
+                addLogEntry(`Checking status for ${packageIds.length} packages...`, 'INFO');
+                
                 for (const appId of packageIds) {
                     const card = Array.from(packageCards).find(card => 
                         card.querySelector('input[type="checkbox"]').dataset.appId === appId
                     );
+                    
+                    addLogEntry(`Checking status for ${appId}...`, 'DEBUG');
                     
                     const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
                         method: 'POST',
@@ -863,8 +851,6 @@
                     });
                     
                     const data = await response.json();
-                    
-                    // Cache the status
                     statusCache[appId] = data;
                     
                     // Update UI for this package
@@ -877,41 +863,22 @@
                         statusBadge.className = 'status-badge installed';
                         versionSpan.textContent = data.version || '';
                         toggle.checked = true;
+                        addLogEntry(`${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
                     } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
                         versionSpan.textContent = '';
                         toggle.checked = false;
+                        addLogEntry(`${appId} is not installed`, 'INFO');
                     }
                 }
                 
                 // Cache the status data
                 sessionStorage.setItem('packageStatus', JSON.stringify(statusCache));
-                
-                // Log the initial bulk check
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: 'Initial bulk Winget Package Status check completed',
-                        type: 'INFO',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry('Initial bulk status check completed', 'SUCCESS');
                 
             } catch (error) {
-                console.error('Error during initial bulk status check:', error);
-                
-                // Log the error
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error during initial bulk status check: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry(`Error during bulk status check: ${error.message}`, 'ERROR');
                 
                 // Show error in UI
                 packageCards.forEach(card => {
@@ -923,7 +890,7 @@
         }
 
         /**
-         * Handles package installation/uninstallation when toggle button is clicked
+         * Handles package installation/uninstallation
          * @param {string} appId - The package identifier
          * @param {HTMLElement} toggle - The toggle button element
          */
@@ -931,98 +898,69 @@
             const card = toggle.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
             const versionSpan = card.querySelector('.version');
+            const action = toggle.checked ? 'install' : 'uninstall';
             
-            // Update UI to show operation in progress
+            addLogEntry(`Starting ${action} for ${appId}...`, 'INFO');
             statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
             toggle.disabled = true;
             
             try {
-                // Send install/uninstall request to server
-                const action = toggle.checked ? 'install' : 'uninstall';
                 const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ appId })
                 });
 
-                // Poll for status changes with timeout
+                // Poll for status changes
                 let attempts = 0;
-                const maxAttempts = 30; // 30 attempts * 5 seconds = 150 seconds (2.5 minutes) maximum wait
-                const pollInterval = 5000; // 5 seconds between checks
+                const maxAttempts = 30;
+                const pollInterval = 5000;
                 let isComplete = false;
 
                 while (!isComplete && attempts < maxAttempts) {
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
+                    addLogEntry(`Checking ${action} status for ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
                     
-                    // Check Winget Package Status
                     const statusResponse = await fetch('http://localhost:9000/api/winget/single-package-status', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ appId, refresh: true })
                     });
                     
                     const data = await statusResponse.json();
                     
-                    // If status matches desired state, we're done
                     if (data.installed === toggle.checked) {
                         isComplete = true;
                         
-                        // Update UI based on final status
                         if (data.installed) {
                             statusBadge.textContent = 'Installed';
                             statusBadge.className = 'status-badge installed';
                             versionSpan.textContent = data.version || '';
                             toggle.checked = true;
+                            addLogEntry(`Successfully installed ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
                         } else {
                             statusBadge.textContent = 'Not Installed';
                             statusBadge.className = 'status-badge not-installed';
                             versionSpan.textContent = '';
                             toggle.checked = false;
+                            addLogEntry(`Successfully uninstalled ${appId}`, 'SUCCESS');
                         }
-                        
-                        // Log success
-                        await fetch('http://localhost:9000/api/log', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                message: `Package ${action} completed for: ${appId}`,
-                                type: 'INFO',
-                                source: 'GUI'
-                            })
-                        });
                     } else {
-                        // Update status to show still working
                         statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
                     }
                     
                     attempts++;
                 }
                 
-                // If we timed out
                 if (!isComplete) {
                     throw new Error(`${action} operation timed out after ${maxAttempts * pollInterval / 1000} seconds`);
                 }
                 
             } catch (error) {
-                // Handle errors and revert UI state
                 statusBadge.textContent = 'Error';
                 toggle.checked = !toggle.checked;
-                console.error('Error:', error);
-                
-                // Log the error
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error during package ${action}: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
             } finally {
-                // Re-enable toggle button
                 toggle.disabled = false;
             }
         }
@@ -1037,13 +975,12 @@
             const statusBadge = card.querySelector('.status-badge');
             const refreshIcon = button.querySelector('.refresh-icon');
             
-            // Show loading state
+            addLogEntry(`Refreshing status for ${appId}...`, 'INFO');
             button.disabled = true;
             statusBadge.textContent = 'Checking...';
             refreshIcon.style.transform = 'rotate(360deg)';
             
             try {
-                // Get fresh Winget Package Status
                 const response = await fetch('http://localhost:9000/api/winget/single-package-status', {
                     method: 'POST',
                     headers: {
@@ -1053,41 +990,27 @@
                 });
                 
                 const data = await response.json();
-                
-                // Get UI elements to update
                 const versionSpan = card.querySelector('.version');
                 const toggle = card.querySelector('input[type="checkbox"]');
                 
-                // Update UI based on new status
                 if (data.installed) {
                     statusBadge.textContent = 'Installed';
                     statusBadge.className = 'status-badge installed';
                     versionSpan.textContent = data.version || '';
                     toggle.checked = true;
+                    addLogEntry(`${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
                 } else {
                     statusBadge.textContent = 'Not Installed';
                     statusBadge.className = 'status-badge not-installed';
                     versionSpan.textContent = '';
                     toggle.checked = false;
+                    addLogEntry(`${appId} is not installed`, 'INFO');
                 }
-
-                // Log the refresh action
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Refreshed status for package: ${appId}`,
-                        type: 'INFO',
-                        source: 'GUI'
-                    })
-                });
             } catch (error) {
-                // Handle errors
-                console.error('Error refreshing Winget Package Status:', error);
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'status-badge not-installed';
+                addLogEntry(`Error refreshing status for ${appId}: ${error.message}`, 'ERROR');
             } finally {
-                // Reset button state
                 button.disabled = false;
                 refreshIcon.style.transform = 'rotate(0deg)';
             }
@@ -1101,51 +1024,26 @@
             const bulkRefreshBtn = document.querySelector('.bulk-refresh-btn');
             const packageCards = document.querySelectorAll('.package-card');
             
-            // Disable button and show loading state
+            addLogEntry('Starting forced bulk status check...', 'INFO');
             bulkRefreshBtn.disabled = true;
             
             try {
-                // Update all cards to loading state
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
                     statusBadge.textContent = 'Checking...';
                 });
                 
-                // Perform bulk status check
                 await performInitialBulkCheck();
-                
-                // Log the forced bulk check
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: 'Forced bulk Winget Package Status check completed',
-                        type: 'INFO',
-                        source: 'GUI'
-                    })
-                });
+                addLogEntry('Forced bulk status check completed successfully', 'SUCCESS');
             } catch (error) {
-                console.error('Error during forced bulk status check:', error);
+                addLogEntry(`Error during forced bulk status check: ${error.message}`, 'ERROR');
                 
-                // Log the error
-                await fetch('http://localhost:9000/api/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Error during forced bulk status check: ${error.message}`,
-                        type: 'ERROR',
-                        source: 'GUI'
-                    })
-                });
-                
-                // Show error in UI
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
                     statusBadge.textContent = 'Error';
                     statusBadge.className = 'status-badge not-installed';
                 });
             } finally {
-                // Re-enable button
                 bulkRefreshBtn.disabled = false;
             }
         }
