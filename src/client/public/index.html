@@ -400,13 +400,43 @@
         .bulk-refresh-btn:disabled .refresh-icon {
             animation: spin 1s linear infinite;
         }
+
+        .stop-btn {
+            padding: 4px 8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 5px;
+        }
+
+        .stop-btn:hover {
+            background: #c82333;
+        }
+
+        .stop-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .stop-icon {
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="tabs">
             <button class="tab active" onclick="openTab('managers')">Package Managers</button>
-            <button class="tab" onclick="openTab('status')">Winget Package Status</button>
+            <button class="tab" onclick="openTab('winget-status')">Winget Package Status</button>
+            <button class="tab" onclick="openTab('choco-status')">Chocolatey Package Status</button>
             <button class="tab" onclick="openTab('logs')">Logs</button>
         </div>
 
@@ -430,15 +460,28 @@
             </div>
         </div>
 
-        <div id="status" class="tab-content">
+        <div id="winget-status" class="tab-content">
             <div class="section">
                 <div class="status-controls">
-                    <button class="bulk-refresh-btn" onclick="forceBulkStatusCheck()">
+                    <button class="bulk-refresh-btn" onclick="forceWingetBulkStatusCheck()">
                         <span class="refresh-icon">↻</span> Refresh All
                     </button>
                 </div>
-                <div class="package-grid">
-                    <!-- Packages will be loaded here -->
+                <div class="package-grid" id="winget-package-grid">
+                    <!-- Winget Packages will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="choco-status" class="tab-content">
+            <div class="section">
+                <div class="status-controls">
+                    <button class="bulk-refresh-btn" onclick="forceChocoBulkStatusCheck()">
+                        <span class="refresh-icon">↻</span> Refresh All
+                    </button>
+                </div>
+                <div class="package-grid" id="choco-package-grid">
+                    <!-- Chocolatey Packages will be loaded here -->
                 </div>
             </div>
         </div>
@@ -462,17 +505,109 @@
     </div>
 
     <script>
+        // Configuration constants
+        const CONFIG = {
+            POLL_INTERVAL: 15000,        // 15 seconds between status checks
+            MIN_BACKOFF: 5000,           // Minimum backoff time (5 seconds)
+            MAX_BACKOFF: 30000,          // Maximum backoff time (30 seconds)
+            MAX_RETRIES: 20,             // Maximum number of retry attempts
+            QUEUE_CHECK_INTERVAL: 1000    // Queue processing interval (1 second)
+        };
+
+        // Operation queue system
+        const operationQueue = {
+            winget: new Map(),
+            choco: new Map(),
+            pendingOperations: [],
+            isProcessing: false,
+            
+            isOperationInProgress: function(manager, appId) {
+                return this[manager].has(appId);
+            },
+            
+            addOperation: function(manager, appId, operation) {
+                if (this.isOperationInProgress(manager, appId)) {
+                    return Promise.reject(new Error('Operation already in progress'));
+                }
+                
+                const promise = new Promise((resolve, reject) => {
+                    this.pendingOperations.push({
+                        manager,
+                        appId,
+                        operation,
+                        resolve,
+                        reject,
+                        retryCount: 0,
+                        nextRetryDelay: CONFIG.MIN_BACKOFF,
+                        isStopped: false
+                    });
+                });
+                
+                this[manager].set(appId, promise);
+                this.processQueue();
+                return promise;
+            },
+            
+            stopOperation: function(manager, appId) {
+                const pendingOp = this.pendingOperations.find(op => 
+                    op.manager === manager && op.appId === appId
+                );
+                
+                if (pendingOp) {
+                    pendingOp.isStopped = true;
+                    this.pendingOperations = this.pendingOperations.filter(op => 
+                        !(op.manager === manager && op.appId === appId)
+                    );
+                    this[manager].delete(appId);
+                    pendingOp.reject(new Error('Operation stopped by user'));
+                    return true;
+                }
+                return false;
+            },
+            
+            processQueue: async function() {
+                if (this.isProcessing || this.pendingOperations.length === 0) return;
+                
+                this.isProcessing = true;
+                const op = this.pendingOperations.shift();
+                
+                try {
+                    if (!op.isStopped) {
+                    const result = await op.operation();
+                    this[op.manager].delete(op.appId);
+                    op.resolve(result);
+                    }
+                } catch (error) {
+                    if (!op.isStopped && op.retryCount < CONFIG.MAX_RETRIES) {
+                        op.retryCount++;
+                        op.nextRetryDelay = Math.min(
+                            op.nextRetryDelay * 2,
+                            CONFIG.MAX_BACKOFF
+                        );
+                        setTimeout(() => {
+                            this.pendingOperations.push(op);
+                        }, op.nextRetryDelay);
+                    } else {
+                        this[op.manager].delete(op.appId);
+                        op.reject(error);
+                    }
+                }
+                
+                this.isProcessing = false;
+                setTimeout(() => this.processQueue(), CONFIG.QUEUE_CHECK_INTERVAL);
+            }
+        };
+
         // Global state to track package initialization
-        let hasInitializedPackages = false;
+        let hasInitializedWingetPackages = false;
+        let hasInitializedChocoPackages = false;
 
         /**
          * Tab Management
-         * Handles switching between different tabs (Package Managers, Package Status, Logs)
-         * Also triggers initial package loading when status tab is first opened
+         * Handles switching between different tabs and initializes package loading
          * @param {string} tabName - Name of the tab to open
          */
         function openTab(tabName) {
-            // Log tab switch
             addLogEntry(`Switching to ${tabName} tab`, 'INFO');
 
             // Hide all tab contents
@@ -492,11 +627,15 @@
             // Add active class to the clicked tab
             event.currentTarget.classList.add('active');
 
-            // Load packages only if it's the status tab and hasn't been initialized
-            if (tabName === 'status' && !hasInitializedPackages) {
-                addLogEntry('First time opening Status tab - initializing package list', 'INFO');
-                loadPackages();
-                hasInitializedPackages = true;
+            // Load packages based on tab
+            if (tabName === 'winget-status' && !hasInitializedWingetPackages) {
+                addLogEntry('First time opening Winget Status tab - initializing package list', 'INFO');
+                loadWingetPackages();
+                hasInitializedWingetPackages = true;
+            } else if (tabName === 'choco-status' && !hasInitializedChocoPackages) {
+                addLogEntry('First time opening Chocolatey Status tab - initializing package list', 'INFO');
+                loadChocoPackages();
+                hasInitializedChocoPackages = true;
             }
         }
 
@@ -699,20 +838,20 @@
          */
 
         /**
-         * Loads and displays all packages in the Winget Package Status tab
+         * Loads and displays all Winget packages
          * Creates cards for each package with status, version, and controls
          */
-        async function loadPackages() {
-            const packageGrid = document.querySelector('.package-grid');
+        async function loadWingetPackages() {
+            const packageGrid = document.getElementById('winget-package-grid');
             packageGrid.innerHTML = 'Loading packages...';
-            addLogEntry('Loading package list...', 'INFO');
+            addLogEntry('Loading Winget package list...', 'INFO');
 
             try {
                 // Check for cached package data
-                const cachedData = sessionStorage.getItem('packageData');
+                const cachedData = sessionStorage.getItem('wingetPackageData');
                 if (cachedData) {
-                    addLogEntry('Using cached package data', 'INFO');
-                    displayPackages(JSON.parse(cachedData));
+                    addLogEntry('Using cached Winget package data', 'INFO');
+                    displayWingetPackages(JSON.parse(cachedData));
                     return;
                 }
 
@@ -721,34 +860,32 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    sessionStorage.setItem('packageData', JSON.stringify(data));
-                    addLogEntry(`Successfully loaded ${data.packages.length} packages`, 'SUCCESS');
-                    displayPackages(data);
+                    sessionStorage.setItem('wingetPackageData', JSON.stringify(data));
+                    addLogEntry(`Successfully loaded ${data.packages.length} Winget packages`, 'SUCCESS');
+                    displayWingetPackages(data);
                 } else {
-                    packageGrid.innerHTML = 'Error loading packages list';
-                    addLogEntry('Failed to load packages list', 'ERROR');
+                    packageGrid.innerHTML = 'Error loading Winget packages list';
+                    addLogEntry('Failed to load Winget packages list', 'ERROR');
                 }
             } catch (error) {
-                packageGrid.innerHTML = 'Error loading packages list';
-                addLogEntry(`Error loading packages: ${error.message}`, 'ERROR');
+                packageGrid.innerHTML = 'Error loading Winget packages list';
+                addLogEntry(`Error loading Winget packages: ${error.message}`, 'ERROR');
             }
         }
 
         /**
-         * Displays packages and their status from data
+         * Displays Winget packages and their status
          * @param {Object} data - Package data to display
          */
-        async function displayPackages(data) {
-            const packageGrid = document.querySelector('.package-grid');
+        async function displayWingetPackages(data) {
+            const packageGrid = document.getElementById('winget-package-grid');
             packageGrid.innerHTML = '';
-            addLogEntry('Rendering package cards...', 'DEBUG');
+            addLogEntry('Rendering Winget package cards...', 'DEBUG');
             
-            // Create a card for each package
             for (const pkg of data.packages) {
                 const card = document.createElement('div');
                 card.className = 'package-card';
                 
-                // Set up card HTML with package info and controls
                 card.innerHTML = `
                     <h4>${pkg.app_name}</h4>
                     <div class="package-desc">${pkg.app_desc}</div>
@@ -758,8 +895,11 @@
                             <span class="version"></span>
                         </div>
                         <div class="package-controls">
-                            <button class="refresh-btn" onclick="refreshPackage('${pkg.app_id}', this)">
+                            <button class="refresh-btn" onclick="refreshWingetPackage('${pkg.app_id}', this)">
                                 <span class="refresh-icon">↻</span>
+                            </button>
+                            <button class="stop-btn" onclick="stopPackageOperation('winget', '${pkg.app_id}', this)" style="display: none;">
+                                <span class="stop-icon">⬛</span>
                             </button>
                             <label class="toggle package-toggle">
                                 <input type="checkbox" data-app-id="${pkg.app_id}">
@@ -771,29 +911,28 @@
                 
                 packageGrid.appendChild(card);
                 
-                // Set up toggle button event handler
                 const toggle = card.querySelector('input[type="checkbox"]');
-                toggle.addEventListener('change', () => handlePackageToggle(pkg.app_id, toggle));
+                toggle.addEventListener('change', () => handleWingetPackageToggle(pkg.app_id, toggle));
             }
 
             // Check for cached status data
-            const cachedStatus = sessionStorage.getItem('packageStatus');
+            const cachedStatus = sessionStorage.getItem('wingetPackageStatus');
             if (cachedStatus) {
-                addLogEntry('Using cached package status data', 'INFO');
-                updatePackageStatusFromCache(JSON.parse(cachedStatus));
+                addLogEntry('Using cached Winget package status data', 'INFO');
+                updateWingetPackageStatusFromCache(JSON.parse(cachedStatus));
             } else {
-                addLogEntry('Performing initial bulk status check...', 'INFO');
-                await performInitialBulkCheck();
+                addLogEntry('Performing initial Winget bulk status check...', 'INFO');
+                await performInitialWingetBulkCheck();
             }
         }
 
         /**
-         * Updates package status from cached data
+         * Updates Winget package status from cached data
          * @param {Object} statusData - Cached status data
          */
-        function updatePackageStatusFromCache(statusData) {
-            addLogEntry('Updating package status from cache...', 'DEBUG');
-            const packageCards = document.querySelectorAll('.package-card');
+        function updateWingetPackageStatusFromCache(statusData) {
+            addLogEntry('Updating Winget package status from cache...', 'DEBUG');
+            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
             
             packageCards.forEach(card => {
                 const appId = card.querySelector('input[type="checkbox"]').dataset.appId;
@@ -817,15 +956,14 @@
                     }
                 }
             });
-            addLogEntry('Package status updated from cache', 'SUCCESS');
+            addLogEntry('Winget package status updated from cache', 'SUCCESS');
         }
 
         /**
-         * Performs initial bulk status check for all packages
-         * Called only once during initial load
+         * Performs initial bulk status check for all Winget packages
          */
-        async function performInitialBulkCheck() {
-            const packageCards = document.querySelectorAll('.package-card');
+        async function performInitialWingetBulkCheck() {
+            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
             const statusCache = {};
             
             try {
@@ -833,15 +971,17 @@
                     card.querySelector('input[type="checkbox"]').dataset.appId
                 );
                 
-                addLogEntry(`Checking status for ${packageIds.length} packages...`, 'INFO');
+                addLogEntry(`Checking status for ${packageIds.length} Winget packages...`, 'INFO');
                 
-                for (const appId of packageIds) {
+                // Create an array of promises for all package checks
+                const checkPromises = packageIds.map(async appId => {
                     const card = Array.from(packageCards).find(card => 
                         card.querySelector('input[type="checkbox"]').dataset.appId === appId
                     );
                     
-                    addLogEntry(`Checking status for ${appId}...`, 'DEBUG');
+                    addLogEntry(`Checking status for Winget package ${appId}...`, 'DEBUG');
                     
+                    try {
                     const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
                         method: 'POST',
                         headers: {
@@ -853,7 +993,6 @@
                     const data = await response.json();
                     statusCache[appId] = data;
                     
-                    // Update UI for this package
                     const statusBadge = card.querySelector('.status-badge');
                     const versionSpan = card.querySelector('.version');
                     const toggle = card.querySelector('input[type="checkbox"]');
@@ -863,24 +1002,38 @@
                         statusBadge.className = 'status-badge installed';
                         versionSpan.textContent = data.version || '';
                         toggle.checked = true;
-                        addLogEntry(`${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                        addLogEntry(`Winget package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
                     } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
                         versionSpan.textContent = '';
                         toggle.checked = false;
-                        addLogEntry(`${appId} is not installed`, 'INFO');
+                        addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
                     }
+                        return { appId, success: true };
+                    } catch (error) {
+                        const statusBadge = card.querySelector('.status-badge');
+                        statusBadge.textContent = 'Error';
+                        statusBadge.className = 'status-badge not-installed';
+                        addLogEntry(`Error checking Winget package ${appId}: ${error.message}`, 'ERROR');
+                        return { appId, success: false, error };
+                    }
+                });
+                
+                // Wait for all checks to complete
+                const results = await Promise.allSettled(checkPromises);
+                const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+                
+                if (failures.length > 0) {
+                    addLogEntry(`${failures.length} Winget package checks failed`, 'WARNING');
+                } else {
+                sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
+                    addLogEntry('Initial Winget bulk status check completed successfully', 'SUCCESS');
                 }
                 
-                // Cache the status data
-                sessionStorage.setItem('packageStatus', JSON.stringify(statusCache));
-                addLogEntry('Initial bulk status check completed', 'SUCCESS');
-                
             } catch (error) {
-                addLogEntry(`Error during bulk status check: ${error.message}`, 'ERROR');
+                addLogEntry(`Error during Winget bulk status check: ${error.message}`, 'ERROR');
                 
-                // Show error in UI
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
                     statusBadge.textContent = 'Error';
@@ -890,92 +1043,107 @@
         }
 
         /**
-         * Handles package installation/uninstallation
+         * Handles Winget package installation/uninstallation
          * @param {string} appId - The package identifier
          * @param {HTMLElement} toggle - The toggle button element
          */
-        async function handlePackageToggle(appId, toggle) {
+        async function handleWingetPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
             const versionSpan = card.querySelector('.version');
+            const stopBtn = card.querySelector('.stop-btn');
             const action = toggle.checked ? 'install' : 'uninstall';
             
-            addLogEntry(`Starting ${action} for ${appId}...`, 'INFO');
-            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+            addLogEntry(`Starting ${action} for Winget package ${appId}...`, 'INFO');
+            statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
             toggle.disabled = true;
+            stopBtn.style.display = 'flex';
             
-            try {
-                const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appId })
-                });
-
-                // Poll for status changes
-                let attempts = 0;
-                const maxAttempts = 30;
-                const pollInterval = 5000;
-                let isComplete = false;
-
-                while (!isComplete && attempts < maxAttempts) {
-                    await new Promise(resolve => setTimeout(resolve, pollInterval));
-                    addLogEntry(`Checking ${action} status for ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
+            const operation = async () => {
+                try {
+                    statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
                     
-                    const statusResponse = await fetch('http://localhost:9000/api/winget/single-package-status', {
+                    const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ appId, refresh: true })
+                        body: JSON.stringify({ appId })
                     });
-                    
-                    const data = await statusResponse.json();
-                    
-                    if (data.installed === toggle.checked) {
-                        isComplete = true;
+
+                    let attempts = 0;
+                    let isComplete = false;
+
+                    while (!isComplete) {
+                        await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
+                        addLogEntry(`Checking ${action} status for Winget package ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
                         
-                        if (data.installed) {
-                            statusBadge.textContent = 'Installed';
-                            statusBadge.className = 'status-badge installed';
-                            versionSpan.textContent = data.version || '';
-                            toggle.checked = true;
-                            addLogEntry(`Successfully installed ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
+                        const statusResponse = await fetch('http://localhost:9000/api/winget/single-package-status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ appId, refresh: true })
+                        });
+                        
+                        const data = await statusResponse.json();
+                        
+                        if (data.installed === toggle.checked) {
+                            isComplete = true;
+                            
+                            if (data.installed) {
+                                statusBadge.textContent = 'Installed';
+                                statusBadge.className = 'status-badge installed';
+                                versionSpan.textContent = data.version || '';
+                                toggle.checked = true;
+                                addLogEntry(`Successfully installed Winget package ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
+                            } else {
+                                statusBadge.textContent = 'Not Installed';
+                                statusBadge.className = 'status-badge not-installed';
+                                versionSpan.textContent = '';
+                                toggle.checked = false;
+                                addLogEntry(`Successfully uninstalled Winget package ${appId}`, 'SUCCESS');
+                            }
                         } else {
-                            statusBadge.textContent = 'Not Installed';
-                            statusBadge.className = 'status-badge not-installed';
-                            versionSpan.textContent = '';
-                            toggle.checked = false;
-                            addLogEntry(`Successfully uninstalled ${appId}`, 'SUCCESS');
+                            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                            attempts++;
+                            
+                            if (attempts >= CONFIG.MAX_RETRIES) {
+                                throw new Error(`${action} operation timed out after ${attempts} attempts`);
+                            }
                         }
-                    } else {
-                        statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
                     }
                     
-                    attempts++;
+                } catch (error) {
+                    statusBadge.textContent = 'Error';
+                    toggle.checked = !toggle.checked;
+                    addLogEntry(`Error during Winget package ${action}: ${error.message}`, 'ERROR');
+                    throw error;
+                } finally {
+                    toggle.disabled = false;
+                    stopBtn.style.display = 'none';
                 }
-                
-                if (!isComplete) {
-                    throw new Error(`${action} operation timed out after ${maxAttempts * pollInterval / 1000} seconds`);
-                }
-                
+            };
+
+            // Add operation to queue
+            try {
+                await operationQueue.addOperation('winget', appId, operation);
             } catch (error) {
                 statusBadge.textContent = 'Error';
                 toggle.checked = !toggle.checked;
-                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
-            } finally {
                 toggle.disabled = false;
+                stopBtn.style.display = 'none';
+                addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
             }
         }
 
         /**
-         * Refreshes the status of a single package
+         * Refreshes the status of a single Winget package
          * @param {string} appId - The package identifier
          * @param {HTMLElement} button - The refresh button element
          */
-        async function refreshPackage(appId, button) {
+        async function refreshWingetPackage(appId, button) {
             const card = button.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
             const refreshIcon = button.querySelector('.refresh-icon');
             
-            addLogEntry(`Refreshing status for ${appId}...`, 'INFO');
+            addLogEntry(`Refreshing status for Winget package ${appId}...`, 'INFO');
             button.disabled = true;
             statusBadge.textContent = 'Checking...';
             refreshIcon.style.transform = 'rotate(360deg)';
@@ -998,18 +1166,18 @@
                     statusBadge.className = 'status-badge installed';
                     versionSpan.textContent = data.version || '';
                     toggle.checked = true;
-                    addLogEntry(`${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                    addLogEntry(`Winget package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
                 } else {
                     statusBadge.textContent = 'Not Installed';
                     statusBadge.className = 'status-badge not-installed';
                     versionSpan.textContent = '';
                     toggle.checked = false;
-                    addLogEntry(`${appId} is not installed`, 'INFO');
+                    addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
                 }
             } catch (error) {
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'status-badge not-installed';
-                addLogEntry(`Error refreshing status for ${appId}: ${error.message}`, 'ERROR');
+                addLogEntry(`Error refreshing Winget package status for ${appId}: ${error.message}`, 'ERROR');
             } finally {
                 button.disabled = false;
                 refreshIcon.style.transform = 'rotate(0deg)';
@@ -1017,14 +1185,13 @@
         }
 
         /**
-         * Forces a bulk status check for all packages
-         * Updates the cache and UI with fresh data
+         * Forces a bulk status check for all Winget packages
          */
-        async function forceBulkStatusCheck() {
-            const bulkRefreshBtn = document.querySelector('.bulk-refresh-btn');
-            const packageCards = document.querySelectorAll('.package-card');
+        async function forceWingetBulkStatusCheck() {
+            const bulkRefreshBtn = document.querySelector('#winget-status .bulk-refresh-btn');
+            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
             
-            addLogEntry('Starting forced bulk status check...', 'INFO');
+            addLogEntry('Starting forced Winget bulk status check...', 'INFO');
             bulkRefreshBtn.disabled = true;
             
             try {
@@ -1033,10 +1200,10 @@
                     statusBadge.textContent = 'Checking...';
                 });
                 
-                await performInitialBulkCheck();
-                addLogEntry('Forced bulk status check completed successfully', 'SUCCESS');
+                await performInitialWingetBulkCheck();
+                addLogEntry('Forced Winget bulk status check completed successfully', 'SUCCESS');
             } catch (error) {
-                addLogEntry(`Error during forced bulk status check: ${error.message}`, 'ERROR');
+                addLogEntry(`Error during forced Winget bulk status check: ${error.message}`, 'ERROR');
                 
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
@@ -1045,6 +1212,407 @@
                 });
             } finally {
                 bulkRefreshBtn.disabled = false;
+            }
+        }
+
+        /**
+         * Loads and displays all Chocolatey packages
+         * Creates cards for each package with status, version, and controls
+         */
+        async function loadChocoPackages() {
+            const packageGrid = document.getElementById('choco-package-grid');
+            packageGrid.innerHTML = 'Loading packages...';
+            addLogEntry('Loading Chocolatey package list...', 'INFO');
+
+            try {
+                // Check for cached package data
+                const cachedData = sessionStorage.getItem('chocoPackageData');
+                if (cachedData) {
+                    addLogEntry('Using cached Chocolatey package data', 'INFO');
+                    displayChocoPackages(JSON.parse(cachedData));
+                    return;
+                }
+
+                // Fetch package list from server
+                const response = await fetch('http://localhost:9000/api/choco/packages-list');
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionStorage.setItem('chocoPackageData', JSON.stringify(data));
+                    addLogEntry(`Successfully loaded ${data.packages.length} Chocolatey packages`, 'SUCCESS');
+                    displayChocoPackages(data);
+                } else {
+                    packageGrid.innerHTML = 'Error loading Chocolatey packages list';
+                    addLogEntry('Failed to load Chocolatey packages list', 'ERROR');
+                }
+            } catch (error) {
+                packageGrid.innerHTML = 'Error loading Chocolatey packages list';
+                addLogEntry(`Error loading Chocolatey packages: ${error.message}`, 'ERROR');
+            }
+        }
+
+        /**
+         * Displays Chocolatey packages and their status
+         * @param {Object} data - Package data to display
+         */
+        async function displayChocoPackages(data) {
+            const packageGrid = document.getElementById('choco-package-grid');
+            packageGrid.innerHTML = '';
+            addLogEntry('Rendering Chocolatey package cards...', 'DEBUG');
+            
+            for (const pkg of data.packages) {
+                const card = document.createElement('div');
+                card.className = 'package-card';
+                
+                card.innerHTML = `
+                    <h4>${pkg.app_name}</h4>
+                    <div class="package-desc">${pkg.app_desc}</div>
+                    <div class="package-status">
+                        <div class="status-info">
+                            <span class="status-badge">Checking...</span>
+                            <span class="version"></span>
+                        </div>
+                        <div class="package-controls">
+                            <button class="refresh-btn" onclick="refreshChocoPackage('${pkg.app_id}', this)">
+                                <span class="refresh-icon">↻</span>
+                            </button>
+                            <button class="stop-btn" onclick="stopPackageOperation('choco', '${pkg.app_id}', this)" style="display: none;">
+                                <span class="stop-icon">⬛</span>
+                            </button>
+                            <label class="toggle package-toggle">
+                                <input type="checkbox" data-app-id="${pkg.app_id}">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                `;
+                
+                packageGrid.appendChild(card);
+                
+                const toggle = card.querySelector('input[type="checkbox"]');
+                toggle.addEventListener('change', () => handleChocoPackageToggle(pkg.app_id, toggle));
+            }
+
+            // Check for cached status data
+            const cachedStatus = sessionStorage.getItem('chocoPackageStatus');
+            if (cachedStatus) {
+                addLogEntry('Using cached Chocolatey package status data', 'INFO');
+                updateChocoPackageStatusFromCache(JSON.parse(cachedStatus));
+            } else {
+                addLogEntry('Performing initial Chocolatey bulk status check...', 'INFO');
+                await performInitialChocoBulkCheck();
+            }
+        }
+
+        /**
+         * Updates Chocolatey package status from cached data
+         * @param {Object} statusData - Cached status data
+         */
+        function updateChocoPackageStatusFromCache(statusData) {
+            addLogEntry('Updating Chocolatey package status from cache...', 'DEBUG');
+            const packageCards = document.querySelectorAll('#choco-package-grid .package-card');
+            
+            packageCards.forEach(card => {
+                const appId = card.querySelector('input[type="checkbox"]').dataset.appId;
+                const status = statusData[appId];
+                
+                if (status) {
+                    const statusBadge = card.querySelector('.status-badge');
+                    const versionSpan = card.querySelector('.version');
+                    const toggle = card.querySelector('input[type="checkbox"]');
+                    
+                    if (status.installed) {
+                        statusBadge.textContent = 'Installed';
+                        statusBadge.className = 'status-badge installed';
+                        versionSpan.textContent = status.version || '';
+                        toggle.checked = true;
+                    } else {
+                        statusBadge.textContent = 'Not Installed';
+                        statusBadge.className = 'status-badge not-installed';
+                        versionSpan.textContent = '';
+                        toggle.checked = false;
+                    }
+                }
+            });
+            addLogEntry('Chocolatey package status updated from cache', 'SUCCESS');
+        }
+
+        /**
+         * Performs initial bulk status check for all Chocolatey packages
+         */
+        async function performInitialChocoBulkCheck() {
+            const packageCards = document.querySelectorAll('#choco-package-grid .package-card');
+            const statusCache = {};
+            
+            try {
+                const packageIds = Array.from(packageCards).map(card => 
+                    card.querySelector('input[type="checkbox"]').dataset.appId
+                );
+                
+                addLogEntry(`Checking status for ${packageIds.length} Chocolatey packages...`, 'INFO');
+                
+                // Create an array of promises for all package checks
+                const checkPromises = packageIds.map(async appId => {
+                    const card = Array.from(packageCards).find(card => 
+                        card.querySelector('input[type="checkbox"]').dataset.appId === appId
+                    );
+                    
+                    addLogEntry(`Checking status for Chocolatey package ${appId}...`, 'DEBUG');
+                    
+                    try {
+                    const response = await fetch('http://localhost:9000/api/choco/bulk-package-status', {
+                    method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ appId, refresh: true })
+                    });
+                    
+                    const data = await response.json();
+                    statusCache[appId] = data;
+                    
+                    const statusBadge = card.querySelector('.status-badge');
+                    const versionSpan = card.querySelector('.version');
+                    const toggle = card.querySelector('input[type="checkbox"]');
+                    
+                    if (data.installed) {
+                        statusBadge.textContent = 'Installed';
+                        statusBadge.className = 'status-badge installed';
+                        versionSpan.textContent = data.version || '';
+                        toggle.checked = true;
+                        addLogEntry(`Chocolatey package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                    } else {
+                        statusBadge.textContent = 'Not Installed';
+                        statusBadge.className = 'status-badge not-installed';
+                        versionSpan.textContent = '';
+                        toggle.checked = false;
+                        addLogEntry(`Chocolatey package ${appId} is not installed`, 'INFO');
+                    }
+                        return { appId, success: true };
+            } catch (error) {
+                        const statusBadge = card.querySelector('.status-badge');
+                        statusBadge.textContent = 'Error';
+                        statusBadge.className = 'status-badge not-installed';
+                        addLogEntry(`Error checking Chocolatey package ${appId}: ${error.message}`, 'ERROR');
+                        return { appId, success: false, error };
+                    }
+                });
+                
+                // Wait for all checks to complete
+                const results = await Promise.allSettled(checkPromises);
+                const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+                
+                if (failures.length > 0) {
+                    addLogEntry(`${failures.length} Chocolatey package checks failed`, 'WARNING');
+                } else {
+                sessionStorage.setItem('chocoPackageStatus', JSON.stringify(statusCache));
+                    addLogEntry('Initial Chocolatey bulk status check completed successfully', 'SUCCESS');
+                }
+                
+            } catch (error) {
+                addLogEntry(`Error during Chocolatey bulk status check: ${error.message}`, 'ERROR');
+                
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Error';
+                    statusBadge.className = 'status-badge not-installed';
+                });
+            }
+        }
+
+        /**
+         * Handles Chocolatey package installation/uninstallation
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} toggle - The toggle button element
+         */
+        async function handleChocoPackageToggle(appId, toggle) {
+            const card = toggle.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const versionSpan = card.querySelector('.version');
+            const stopBtn = card.querySelector('.stop-btn');
+            const action = toggle.checked ? 'install' : 'uninstall';
+            
+            addLogEntry(`Starting ${action} for Chocolatey package ${appId}...`, 'INFO');
+            statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
+            toggle.disabled = true;
+            stopBtn.style.display = 'flex';
+            
+            const operation = async () => {
+                try {
+                    statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                    
+                    const response = await fetch(`http://localhost:9000/api/choco/${action}-package`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ appId })
+                    });
+
+                    let attempts = 0;
+                    let isComplete = false;
+
+                    while (!isComplete) {
+                        await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
+                        addLogEntry(`Checking ${action} status for Chocolatey package ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
+                        
+                        const statusResponse = await fetch('http://localhost:9000/api/choco/single-package-status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ appId, refresh: true })
+                        });
+                        
+                        const data = await statusResponse.json();
+                        
+                        if (data.installed === toggle.checked) {
+                            isComplete = true;
+                            
+                            if (data.installed) {
+                                statusBadge.textContent = 'Installed';
+                                statusBadge.className = 'status-badge installed';
+                                versionSpan.textContent = data.version || '';
+                                toggle.checked = true;
+                                addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
+                            } else {
+                                statusBadge.textContent = 'Not Installed';
+                                statusBadge.className = 'status-badge not-installed';
+                                versionSpan.textContent = '';
+                                toggle.checked = false;
+                                addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
+                            }
+                        } else {
+                            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                            attempts++;
+                            
+                            if (attempts >= CONFIG.MAX_RETRIES) {
+                                throw new Error(`${action} operation timed out after ${attempts} attempts`);
+                            }
+                        }
+                    }
+                    
+                } catch (error) {
+                    statusBadge.textContent = 'Error';
+                    toggle.checked = !toggle.checked;
+                    addLogEntry(`Error during Chocolatey package ${action}: ${error.message}`, 'ERROR');
+                    throw error;
+                } finally {
+                    toggle.disabled = false;
+                    stopBtn.style.display = 'none';
+                }
+            };
+
+            // Add operation to queue
+            try {
+                await operationQueue.addOperation('choco', appId, operation);
+            } catch (error) {
+                statusBadge.textContent = 'Error';
+                toggle.checked = !toggle.checked;
+                toggle.disabled = false;
+                stopBtn.style.display = 'none';
+                addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
+            }
+        }
+
+        /**
+         * Refreshes the status of a single Chocolatey package
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} button - The refresh button element
+         */
+        async function refreshChocoPackage(appId, button) {
+            const card = button.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const refreshIcon = button.querySelector('.refresh-icon');
+            
+            addLogEntry(`Refreshing status for Chocolatey package ${appId}...`, 'INFO');
+            button.disabled = true;
+            statusBadge.textContent = 'Checking...';
+            refreshIcon.style.transform = 'rotate(360deg)';
+            
+            try {
+                const response = await fetch('http://localhost:9000/api/choco/single-package-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ appId, refresh: true })
+                });
+                
+                const data = await response.json();
+                const versionSpan = card.querySelector('.version');
+                const toggle = card.querySelector('input[type="checkbox"]');
+                
+                if (data.installed) {
+                    statusBadge.textContent = 'Installed';
+                    statusBadge.className = 'status-badge installed';
+                    versionSpan.textContent = data.version || '';
+                    toggle.checked = true;
+                    addLogEntry(`Chocolatey package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                } else {
+                    statusBadge.textContent = 'Not Installed';
+                    statusBadge.className = 'status-badge not-installed';
+                    versionSpan.textContent = '';
+                    toggle.checked = false;
+                    addLogEntry(`Chocolatey package ${appId} is not installed`, 'INFO');
+                }
+            } catch (error) {
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge not-installed';
+                addLogEntry(`Error refreshing Chocolatey package status for ${appId}: ${error.message}`, 'ERROR');
+            } finally {
+                button.disabled = false;
+                refreshIcon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        /**
+         * Forces a bulk status check for all Chocolatey packages
+         */
+        async function forceChocoBulkStatusCheck() {
+            const bulkRefreshBtn = document.querySelector('#choco-status .bulk-refresh-btn');
+            const packageCards = document.querySelectorAll('#choco-package-grid .package-card');
+            
+            addLogEntry('Starting forced Chocolatey bulk status check...', 'INFO');
+            bulkRefreshBtn.disabled = true;
+            
+            try {
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Checking...';
+                });
+                
+                await performInitialChocoBulkCheck();
+                addLogEntry('Forced Chocolatey bulk status check completed successfully', 'SUCCESS');
+            } catch (error) {
+                addLogEntry(`Error during forced Chocolatey bulk status check: ${error.message}`, 'ERROR');
+                
+                packageCards.forEach(card => {
+                    const statusBadge = card.querySelector('.status-badge');
+                    statusBadge.textContent = 'Error';
+                    statusBadge.className = 'status-badge not-installed';
+                });
+            } finally {
+                bulkRefreshBtn.disabled = false;
+            }
+        }
+
+        /**
+         * Stops a package operation and updates UI
+         * @param {string} manager - The package manager (winget/choco)
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} button - The stop button element
+         */
+        async function stopPackageOperation(manager, appId, button) {
+            const card = button.closest('.package-card');
+            const statusBadge = card.querySelector('.status-badge');
+            const toggle = card.querySelector('input[type="checkbox"]');
+            const stopBtn = card.querySelector('.stop-btn');
+            
+            addLogEntry(`Stopping ${manager} operation for package ${appId}...`, 'INFO');
+            
+            if (operationQueue.stopOperation(manager, appId)) {
+                statusBadge.textContent = 'Operation Stopped';
+                toggle.checked = !toggle.checked;
+                toggle.disabled = false;
+                stopBtn.style.display = 'none';
+                addLogEntry(`Successfully stopped ${manager} operation for package ${appId}`, 'SUCCESS');
             }
         }
     </script>

@@ -1,5 +1,5 @@
-# Winget Package Status Service Module
-# Provides functionality for managing package installation status through winget
+# Chocolatey Package Status Service Module
+# Provides functionality for managing package installation status through Chocolatey
 
 #Requires -Version 5.0
 #Requires -RunAsAdministrator
@@ -10,28 +10,28 @@
 
 <#
 .SYNOPSIS
-    Gets the list of managed Winget packages from JSON configuration
+    Gets the list of managed Chocolatey packages from JSON configuration
 .DESCRIPTION
-    Reads and parses the winget_packages_list.json file containing
+    Reads and parses the choco_packages_list.json file containing
     package definitions and metadata
 .RETURNS
     Hashtable containing success status and packages array
 #>
-function Get-WingetPackagesList {
-    Write-TerminalLog "Reading winget packages list from JSON..." "DEBUG"
+function Get-ChocoPackagesList {
+    Write-TerminalLog "Reading Chocolatey packages list from JSON..." "DEBUG"
     
     try {
-        $jsonPath = Join-Path $PSScriptRoot "..\..\winget_packages_list.json"
+        $jsonPath = Join-Path $PSScriptRoot "..\..\choco_packages_list.json"
         $jsonContent = Get-Content -Path $jsonPath -Raw | ConvertFrom-Json
         
-        Write-TerminalLog "Successfully loaded winget packages list" "SUCCESS"
+        Write-TerminalLog "Successfully loaded Chocolatey packages list" "SUCCESS"
         return @{
             success = $true
             packages = $jsonContent.packages
         }
     }
     catch {
-        Write-TerminalLog "Failed to read winget packages list: $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Failed to read Chocolatey packages list: $($_.Exception.Message)" "ERROR"
         return @{
             success = $false
             error = "Failed to read packages list: $($_.Exception.Message)"
@@ -41,9 +41,9 @@ function Get-WingetPackagesList {
 
 <#
 .SYNOPSIS
-    Gets installation status for a Winget package in bulk check mode
+    Gets installation status for a Chocolatey package in bulk check mode
 .DESCRIPTION
-    Checks if a package is installed using winget list command
+    Checks if a package is installed using choco list command
     Uses and updates the package status cache
 .PARAMETER AppId
     The unique identifier of the package to check
@@ -52,26 +52,26 @@ function Get-WingetPackagesList {
 .RETURNS
     Hashtable containing installation status and version
 #>
-function Get-WingetBulkPackageStatus {
+function Get-ChocoBulkPackageStatus {
     param (
         [Parameter(Mandatory=$true)]
         [string]$AppId,
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Checking installation status for Winget package: $AppId" "DEBUG"
+    Write-TerminalLog "Checking installation status for Chocolatey package: $AppId" "DEBUG"
     
     if (-not $ForceRefresh) {
         $cachedStatus = Get-CachedPackageStatus -AppId $AppId
         if ($cachedStatus) {
-            Write-TerminalLog "Returning cached status for Winget package: $AppId" "DEBUG"
+            Write-TerminalLog "Returning cached status for Chocolatey package: $AppId" "DEBUG"
             return $cachedStatus
         }
     }
     
     try {
-        Write-TerminalLog "Querying winget for package: $AppId" "DEBUG"
-        $result = winget list --id $AppId --accept-source-agreements | Out-String
+        Write-TerminalLog "Querying Chocolatey for package: $AppId" "DEBUG"
+        $result = choco list --local-only --exact $AppId | Out-String
         
         # Parse the output
         $installed = $false
@@ -79,11 +79,9 @@ function Get-WingetBulkPackageStatus {
         
         $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
         foreach ($line in $lines) {
-            if ($line -match $AppId) {
+            if ($line -match "$AppId\s+([^\s]+)") {
                 $installed = $true
-                if ($line -match '^[^\s]+\s+([^\s]+)') {
-                    $version = $matches[1]
-                }
+                $version = $matches[1]
                 break
             }
         }
@@ -95,11 +93,11 @@ function Get-WingetBulkPackageStatus {
         
         Set-CachedPackageStatus -AppId $AppId -Status $status
         
-        Write-TerminalLog "Winget package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
+        Write-TerminalLog "Chocolatey package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
         return $status
     }
     catch {
-        Write-TerminalLog "Failed to get Winget package status: $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Failed to get Chocolatey package status: $($_.Exception.Message)" "ERROR"
         
         $status = @{
             installed = $false
@@ -112,9 +110,9 @@ function Get-WingetBulkPackageStatus {
 
 <#
 .SYNOPSIS
-    Gets installation status for a single Winget package
+    Gets installation status for a single Chocolatey package
 .DESCRIPTION
-    Checks if a package is installed using winget list command
+    Checks if a package is installed using choco list command
     Uses and updates the package status cache
 .PARAMETER AppId
     The unique identifier of the package to check
@@ -123,26 +121,26 @@ function Get-WingetBulkPackageStatus {
 .RETURNS
     Hashtable containing installation status and version
 #>
-function Get-WingetSinglePackageStatus {
+function Get-ChocoSinglePackageStatus {
     param (
         [Parameter(Mandatory=$true)]
         [string]$AppId,
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Checking single Winget package status: $AppId" "DEBUG"
+    Write-TerminalLog "Checking single Chocolatey package status: $AppId" "DEBUG"
     
     if (-not $ForceRefresh) {
         $cachedStatus = Get-CachedPackageStatus -AppId $AppId
         if ($cachedStatus) {
-            Write-TerminalLog "Returning cached status for Winget package: $AppId" "DEBUG"
+            Write-TerminalLog "Returning cached status for Chocolatey package: $AppId" "DEBUG"
             return $cachedStatus
         }
     }
     
     try {
-        Write-TerminalLog "Querying winget for single package: $AppId" "DEBUG"
-        $result = winget list --id $AppId --accept-source-agreements | Out-String
+        Write-TerminalLog "Querying Chocolatey for single package: $AppId" "DEBUG"
+        $result = choco list --local-only --exact $AppId | Out-String
         
         # Parse the output
         $installed = $false
@@ -150,11 +148,9 @@ function Get-WingetSinglePackageStatus {
         
         $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
         foreach ($line in $lines) {
-            if ($line -match $AppId) {
+            if ($line -match "$AppId\s+([^\s]+)") {
                 $installed = $true
-                if ($line -match '^[^\s]+\s+([^\s]+)') {
-                    $version = $matches[1]
-                }
+                $version = $matches[1]
                 break
             }
         }
@@ -166,11 +162,11 @@ function Get-WingetSinglePackageStatus {
         
         Set-CachedPackageStatus -AppId $AppId -Status $status
         
-        Write-TerminalLog "Winget package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
+        Write-TerminalLog "Chocolatey package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
         return $status
     }
     catch {
-        Write-TerminalLog "Failed to get Winget package status: $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Failed to get Chocolatey package status: $($_.Exception.Message)" "ERROR"
         
         $status = @{
             installed = $false
@@ -183,7 +179,7 @@ function Get-WingetSinglePackageStatus {
 
 <#
 .SYNOPSIS
-    Installs a package using winget
+    Installs a package using Chocolatey
 .DESCRIPTION
     Initiates package installation and clears status cache
 .PARAMETER AppId
@@ -191,26 +187,26 @@ function Get-WingetSinglePackageStatus {
 .RETURNS
     Hashtable containing success status and message
 #>
-function Install-WingetPackage {
+function Install-ChocoPackage {
     param (
         [Parameter(Mandatory=$true)]
         [string]$AppId
     )
     
-    Write-TerminalLog "Starting installation of Winget package: $AppId" "INFO"
+    Write-TerminalLog "Starting installation of Chocolatey package: $AppId" "INFO"
     
     try {
-        $result = winget install --exact --id $AppId --accept-source-agreements --accept-package-agreements
+        $result = choco install $AppId -y
         Clear-PackageStatusCache
         
-        Write-TerminalLog "Successfully initiated installation of Winget package: $AppId" "SUCCESS"
+        Write-TerminalLog "Successfully initiated installation of Chocolatey package: $AppId" "SUCCESS"
         return @{
             success = $true
             message = "Package installation initiated"
         }
     }
     catch {
-        Write-TerminalLog "Failed to install Winget package $AppId : $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Failed to install Chocolatey package $AppId : $($_.Exception.Message)" "ERROR"
         return @{
             success = $false
             error = "Failed to install package: $($_.Exception.Message)"
@@ -220,7 +216,7 @@ function Install-WingetPackage {
 
 <#
 .SYNOPSIS
-    Uninstalls a package using winget
+    Uninstalls a package using Chocolatey
 .DESCRIPTION
     Initiates package uninstallation and clears status cache
 .PARAMETER AppId
@@ -228,26 +224,26 @@ function Install-WingetPackage {
 .RETURNS
     Hashtable containing success status and message
 #>
-function Uninstall-WingetPackage {
+function Uninstall-ChocoPackage {
     param (
         [Parameter(Mandatory=$true)]
         [string]$AppId
     )
     
-    Write-TerminalLog "Starting uninstallation of Winget package: $AppId" "INFO"
+    Write-TerminalLog "Starting uninstallation of Chocolatey package: $AppId" "INFO"
     
     try {
-        $result = winget uninstall --exact --id $AppId
+        $result = choco uninstall $AppId -y
         Clear-PackageStatusCache
         
-        Write-TerminalLog "Successfully initiated uninstallation of Winget package: $AppId" "SUCCESS"
+        Write-TerminalLog "Successfully initiated uninstallation of Chocolatey package: $AppId" "SUCCESS"
         return @{
             success = $true
             message = "Package uninstallation initiated"
         }
     }
     catch {
-        Write-TerminalLog "Failed to uninstall Winget package $AppId : $($_.Exception.Message)" "ERROR"
+        Write-TerminalLog "Failed to uninstall Chocolatey package $AppId : $($_.Exception.Message)" "ERROR"
         return @{
             success = $false
             error = "Failed to uninstall package: $($_.Exception.Message)"

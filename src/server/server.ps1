@@ -12,6 +12,7 @@ $rootPath = Split-Path -Parent (Split-Path -Parent $scriptPath)
 . "$rootPath\src\services\wingetService.ps1"       # Winget operations
 . "$rootPath\src\services\chocoService.ps1"        # Chocolatey operations
 . "$rootPath\src\services\winget_package_status_Service.ps1"  # Package status management
+. "$rootPath\src\services\choco_package_status_Service.ps1"   # Chocolatey package status management
 
 Write-TerminalLog "Starting server initialization..." "INFO"
 
@@ -103,7 +104,7 @@ function Start-PackageServer {
                     # Winget Package List Endpoint
                     '/api/winget/packages-list' {
                         Write-TerminalLog "Processing packages list request" "DEBUG"
-                        Get-PackagesList
+                        Get-WingetPackagesList
                     }
                     
                     # Winget Bulk Package Status Endpoint
@@ -113,7 +114,7 @@ function Start-PackageServer {
                             $data = $body | ConvertFrom-Json
                             Write-TerminalLog "Processing bulk package status request for: $($data.appId)" "DEBUG"
                             @{
-                                status = Get-BulkPackageInstallationStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                                status = Get-WingetBulkPackageStatus -AppId $data.appId -ForceRefresh:$data.refresh
                             }
                         } else {
                             $response.StatusCode = 405
@@ -128,7 +129,7 @@ function Start-PackageServer {
                             $data = $body | ConvertFrom-Json
                             Write-TerminalLog "Processing single package status request for: $($data.appId)" "DEBUG"
                             @{
-                                status = Get-SinglePackageInstallStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                                status = Get-WingetSinglePackageStatus -AppId $data.appId -ForceRefresh:$data.refresh
                             }
                         } else {
                             $response.StatusCode = 405
@@ -167,6 +168,68 @@ function Start-PackageServer {
                         Write-TerminalLog "Processing Chocolatey version check request" "DEBUG"
                         @{
                             version = Get-ChocoVersion
+                        }
+                    }
+                    
+                    # Chocolatey Package List Endpoint
+                    '/api/choco/packages-list' {
+                        Write-TerminalLog "Processing Chocolatey packages list request" "DEBUG"
+                        Get-ChocoPackagesList
+                    }
+                    
+                    # Chocolatey Bulk Package Status Endpoint
+                    '/api/choco/bulk-package-status' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing Chocolatey bulk package status request for: $($data.appId)" "DEBUG"
+                            @{
+                                status = Get-ChocoBulkPackageStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                            }
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Chocolatey Single Package Status Endpoint
+                    '/api/choco/single-package-status' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing Chocolatey single package status request for: $($data.appId)" "DEBUG"
+                            @{
+                                status = Get-ChocoSinglePackageStatus -AppId $data.appId -ForceRefresh:$data.refresh
+                            }
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Chocolatey Package Installation Endpoint
+                    '/api/choco/install-package' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing Chocolatey package installation request for: $($data.appId)" "DEBUG"
+                            Install-ChocoPackage -AppId $data.appId
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Chocolatey Package Uninstallation Endpoint
+                    '/api/choco/uninstall-package' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            Write-TerminalLog "Processing Chocolatey package uninstallation request for: $($data.appId)" "DEBUG"
+                            Uninstall-ChocoPackage -AppId $data.appId
+                        } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
                         }
                     }
                     
