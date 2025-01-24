@@ -8,6 +8,13 @@
 . "$PSScriptRoot\package_status_cache_service.ps1"
 . "$PSScriptRoot\logService.ps1"
 
+# Cache configuration
+$script:WingetStatusCache = @{}
+$script:LastBulkCheck = $null
+$script:BulkCheckInterval = 900 # 15 minutes
+$script:SingleCheckInterval = 600 # 10 minutes
+$script:CacheTimestamps = @{}
+
 <#
 .SYNOPSIS
     Gets the list of managed Winget packages from JSON configuration
@@ -45,8 +52,8 @@ function Get-WingetPackagesList {
 .DESCRIPTION
     Checks if a package is installed using winget list command
     Uses and updates the package status cache
-.PARAMETER AppId
-    The unique identifier of the package to check
+.PARAMETER AppIds
+    The unique identifiers of the packages to check
 .PARAMETER ForceRefresh
     If true, bypasses cache and performs fresh check
 .RETURNS
@@ -55,58 +62,109 @@ function Get-WingetPackagesList {
 function Get-WingetBulkPackageStatus {
     param (
         [Parameter(Mandatory=$true)]
-        [string]$AppId,
+        [string[]]$AppIds,
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Checking installation status for Winget package: $AppId" "DEBUG"
+    Write-TerminalLog "Starting bulk status check for ${AppIds.Count} Winget packages" "DEBUG"
     
-    if (-not $ForceRefresh) {
-        $cachedStatus = Get-CachedPackageStatus -AppId $AppId
-        if ($cachedStatus) {
-            Write-TerminalLog "Returning cached status for Winget package: $AppId" "DEBUG"
-            return $cachedStatus
-        }
-    }
-    
-    try {
-        Write-TerminalLog "Querying winget for package: $AppId" "DEBUG"
-        $result = winget list --id $AppId --accept-source-agreements | Out-String
-        
-        # Parse the output
-        $installed = $false
-        $version = $null
-        
-        $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
-        foreach ($line in $lines) {
-            if ($line -match $AppId) {
-                $installed = $true
-                if ($line -match '^[^\s]+\s+([^\s]+)') {
-                    $version = $matches[1]
-                }
+    # Check if we need to refresh any packages
+    $needsRefresh = $ForceRefresh
+    if (-not $needsRefresh) {
+        $currentTime = Get-Date
+        foreach ($appId in $AppIds) {
+            if (-not $script:CacheTimestamps[$appId] -or 
+                ($currentTime - $script:CacheTimestamps[$appId]).TotalSeconds -gt $script:BulkCheckInterval) {
+                $needsRefresh = $true
                 break
             }
         }
+    }
+    
+    # Return cached results if no refresh needed
+    if (-not $needsRefresh) {
+        Write-TerminalLog "Using cached bulk status results" "DEBUG"
+        return $AppIds | ForEach-Object {
+            @{
+                appId = $_
+                status = $script:WingetStatusCache[$_]
+            }
+        }
+    }
+
+    try {
+        # Get all installed packages in one call
+        Write-TerminalLog "Fetching all installed packages..." "DEBUG"
+        $installedPackages = winget list --accept-source-agreements | Out-String
+        $currentTime = Get-Date
         
-        $status = @{
-            installed = $installed
-            version = $version
+        # Parse the output once
+        $packageLines = $installedPackages -split "`n" | 
+                       Where-Object { $_ -match '\S' } | 
+                       Select-Object -Skip 2  # Skip header lines
+        
+        # Process packages in parallel
+        $maxParallelJobs = 4  # Adjust based on system capabilities
+        $jobs = @()
+        $results = @{}
+        
+        # Create job scriptblock
+        $jobScript = {
+            param($appId, $packageLines)
+            
+            $status = @{
+                installed = $false
+                version = $null
+            }
+            
+            # Look for package in parsed output
+            foreach ($line in $packageLines) {
+                if ($line -match [regex]::Escape($appId)) {
+                    $parts = $line -split '\s+' | Where-Object { $_ }
+                    $status.installed = $true
+                    $status.version = $parts[1]
+                    break
+                }
+            }
+            
+            return @{
+                appId = $appId
+                status = $status
+            }
         }
         
-        Set-CachedPackageStatus -AppId $AppId -Status $status
+        # Process packages in batches
+        for ($i = 0; $i -lt $AppIds.Count; $i += $maxParallelJobs) {
+            $batch = $AppIds | Select-Object -Skip $i -First $maxParallelJobs
+            
+            # Start jobs for current batch
+            foreach ($appId in $batch) {
+                $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $appId, $packageLines
+            }
+            
+            # Wait for current batch to complete
+            $jobs | Wait-Job | Receive-Job | ForEach-Object {
+                $results[$_.appId] = $_
+                
+                # Update cache
+                $script:WingetStatusCache[$_.appId] = $_.status
+                $script:CacheTimestamps[$_.appId] = $currentTime
+            }
+            
+            # Clean up jobs
+            $jobs | Remove-Job
+            $jobs = @()
+        }
         
-        Write-TerminalLog "Winget package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
-        return $status
+        # Return results in original order
+        $finalResults = $AppIds | ForEach-Object { $results[$_] }
+        
+        Write-TerminalLog "Bulk status check completed successfully" "SUCCESS"
+        return $finalResults
     }
     catch {
-        Write-TerminalLog "Failed to get Winget package status: $($_.Exception.Message)" "ERROR"
-        
-        $status = @{
-            installed = $false
-            version = $null
-        }
-        Set-CachedPackageStatus -AppId $AppId -Status $status
-        return $status
+        Write-TerminalLog "Error during bulk status check: $($_.Exception.Message)" "ERROR"
+        throw
     }
 }
 
@@ -130,54 +188,47 @@ function Get-WingetSinglePackageStatus {
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Checking single Winget package status: $AppId" "DEBUG"
+    $currentTime = Get-Date
     
-    if (-not $ForceRefresh) {
-        $cachedStatus = Get-CachedPackageStatus -AppId $AppId
-        if ($cachedStatus) {
-            Write-TerminalLog "Returning cached status for Winget package: $AppId" "DEBUG"
-            return $cachedStatus
-        }
+    # Check cache first with timestamp validation
+    if (-not $ForceRefresh -and 
+        $script:WingetStatusCache.ContainsKey($AppId) -and 
+        $script:CacheTimestamps[$AppId] -and
+        ($currentTime - $script:CacheTimestamps[$AppId]).TotalSeconds -lt $script:SingleCheckInterval) {
+        Write-TerminalLog "Returning cached status for $AppId" "DEBUG"
+        return $script:WingetStatusCache[$AppId]
     }
     
     try {
-        Write-TerminalLog "Querying winget for single package: $AppId" "DEBUG"
+        Write-TerminalLog "Checking status for package: $AppId" "DEBUG"
         $result = winget list --id $AppId --accept-source-agreements | Out-String
-        
-        # Parse the output
-        $installed = $false
-        $version = $null
-        
-        $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
-        foreach ($line in $lines) {
-            if ($line -match $AppId) {
-                $installed = $true
-                if ($line -match '^[^\s]+\s+([^\s]+)') {
-                    $version = $matches[1]
-                }
-                break
-            }
-        }
-        
-        $status = @{
-            installed = $installed
-            version = $version
-        }
-        
-        Set-CachedPackageStatus -AppId $AppId -Status $status
-        
-        Write-TerminalLog "Winget package $AppId status: $(if($installed){'Installed'}else{'Not Installed'})$(if($version){" v$version"})" "INFO"
-        return $status
-    }
-    catch {
-        Write-TerminalLog "Failed to get Winget package status: $($_.Exception.Message)" "ERROR"
         
         $status = @{
             installed = $false
             version = $null
         }
-        Set-CachedPackageStatus -AppId $AppId -Status $status
+        
+        $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
+        foreach ($line in $lines) {
+            if ($line -match $AppId) {
+                $status.installed = $true
+                if ($line -match '^[^\s]+\s+([^\s]+)') {
+                    $status.version = $matches[1]
+                }
+                break
+            }
+        }
+        
+        # Update cache with timestamp
+        $script:WingetStatusCache[$AppId] = $status
+        $script:CacheTimestamps[$AppId] = $currentTime
+        
+        Write-TerminalLog "Status check completed for $AppId" "SUCCESS"
         return $status
+    }
+    catch {
+        Write-TerminalLog "Error checking package status: $($_.Exception.Message)" "ERROR"
+        throw
     }
 }
 
@@ -252,5 +303,24 @@ function Uninstall-WingetPackage {
             success = $false
             error = "Failed to uninstall package: $($_.Exception.Message)"
         }
+    }
+}
+
+# Clear cache when installing/uninstalling
+function Clear-WingetStatusCache {
+    param (
+        [string]$AppId
+    )
+    
+    if ($AppId) {
+        # Clear cache for specific package
+        $script:WingetStatusCache.Remove($AppId)
+        $script:CacheTimestamps.Remove($AppId)
+        Write-TerminalLog "Cleared Winget status cache for $AppId" "DEBUG"
+    } else {
+        # Clear entire cache
+        $script:WingetStatusCache.Clear()
+        $script:CacheTimestamps.Clear()
+        Write-TerminalLog "Cleared all Winget status cache" "DEBUG"
     }
 } 

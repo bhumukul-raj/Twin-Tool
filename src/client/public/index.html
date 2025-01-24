@@ -431,6 +431,439 @@
         }
     </style>
 </head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Package Manager Tools</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+        }
+
+        .container {
+            width: 70%;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e1e4e8;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            color: #586069;
+            position: relative;
+        }
+
+        .tab.active {
+            color: #2196F3;
+            font-weight: bold;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #2196F3;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .section {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e1e4e8;
+            flex: 1;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #ccc;
+        }
+
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+            margin-left: 10px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            background: white;
+        }
+
+        .error { color: red; }
+        .success { color: green; }
+
+        /* Log Section Styles */
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+        }
+
+        .log-entry.success { color: #28a745; }
+        .log-entry.error { color: #dc3545; }
+        .log-entry.warning { color: #ffc107; }
+        .log-entry.info { color: #17a2b8; }
+        .log-entry.debug { color: #6c757d; }
+        .log-entry.request { color: #9c27b0; }
+        .log-entry.response { color: #4caf50; }
+
+        .log-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .log-btn {
+            padding: 8px 16px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .log-btn:hover {
+            background: #5a6268;
+        }
+
+        .log-btn i {
+            font-size: 16px;
+        }
+
+        /* Add this to your existing styles */
+        .manager-container {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+        }
+
+        .package-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .package-card {
+            background: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 15px;
+            position: relative;
+        }
+
+        .package-card h4 {
+            margin: 0 0 10px 0;
+            color: #24292e;
+        }
+
+        .package-desc {
+            color: #586069;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .package-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid #e1e4e8;
+        }
+
+        .package-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .refresh-btn {
+            padding: 4px 8px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .refresh-btn:hover {
+            background: #5a6268;
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .refresh-btn:active .refresh-icon {
+            transform: rotate(180deg);
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .installed {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .not-installed {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .version {
+            color: #586069;
+            font-size: 12px;
+        }
+
+        .package-toggle {
+            width: 50px;
+            height: 26px;
+            margin: 0;
+        }
+
+        .package-toggle .slider {
+            height: 26px;
+        }
+
+        .package-toggle .slider:before {
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+        }
+
+        .package-toggle input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-controls {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .bulk-check-btn {
+            padding: 8px 16px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .bulk-check-btn:hover {
+            background: #1976D2;
+        }
+
+        .bulk-check-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .bulk-check-btn .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .bulk-check-btn:disabled .refresh-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .bulk-refresh-btn {
+            padding: 8px 16px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .bulk-refresh-btn:hover {
+            background: #1976D2;
+        }
+
+        .bulk-refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .bulk-refresh-btn .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .bulk-refresh-btn:disabled .refresh-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        .stop-btn {
+            padding: 4px 8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 5px;
+        }
+
+        .stop-btn:hover {
+            background: #c82333;
+        }
+
+        .stop-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .stop-icon {
+            font-size: 12px;
+        }
+    </style>
+</head>
 <body>
     <div class="container">
         <div class="tabs">

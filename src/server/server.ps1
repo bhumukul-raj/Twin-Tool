@@ -47,6 +47,21 @@ $script:port = Get-AvailablePort
 $script:url = "http://localhost:$port/"
 $script:listener = $null
 
+# CORS Configuration
+$corsHeaders = @{
+    'Access-Control-Allow-Origin' = '*'
+    'Access-Control-Allow-Methods' = 'GET, POST, OPTIONS'
+    'Access-Control-Allow-Headers' = 'Content-Type'
+    'Access-Control-Max-Age' = '86400'  # Cache preflight for 24 hours
+}
+
+function Add-CorsHeaders {
+    param($response)
+    foreach ($header in $corsHeaders.GetEnumerator()) {
+        $response.Headers.Add($header.Key, $header.Value)
+    }
+}
+
 <#
 .SYNOPSIS
     Initializes and starts the HTTP server for handling GUI requests
@@ -75,16 +90,13 @@ function Start-PackageServer {
                 $request = $context.Request
                 $response = $context.Response
                 
-                # Add CORS headers
-                $response.Headers.Add("Access-Control-Allow-Origin", "*")
-                $response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+                # Add CORS headers to all responses
+                Add-CorsHeaders $response
                 
-                # Handle OPTIONS requests for CORS
+                # Handle preflight requests efficiently
                 if ($request.HttpMethod -eq "OPTIONS") {
-                    $response.StatusCode = 200
+                    $response.StatusCode = 204
                     $response.Close()
-                    Write-TerminalLog "Handled OPTIONS request" "DEBUG"
                     continue
                 }
                 
@@ -158,6 +170,35 @@ function Start-PackageServer {
                             Write-TerminalLog "Processing package uninstallation request for: $($data.appId)" "DEBUG"
                             Uninstall-WingetPackage -AppId $data.appId
                         } else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Winget Bulk Status Endpoint
+                    '/api/winget/bulk-status' {
+                        if ($request.HttpMethod -eq "POST") {
+                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                            $data = $body | ConvertFrom-Json
+                            
+                            Write-TerminalLog "Processing bulk status request for ${$data.appIds.Count} packages" "DEBUG"
+                            
+                            try {
+                                $results = Get-WingetBulkPackageStatus -AppIds $data.appIds -ForceRefresh:$data.refresh
+                                @{
+                                    success = $true
+                                    results = $results
+                                }
+                            }
+                            catch {
+                                $response.StatusCode = 500
+                                @{
+                                    success = $false
+                                    error = $_.Exception.Message
+                                }
+                            }
+                        }
+                        else {
                             $response.StatusCode = 405
                             @{ error = "Method not allowed" }
                         }
