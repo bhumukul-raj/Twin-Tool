@@ -1,6 +1,6 @@
 # Twin Tool - Package Manager Interface
 
-A PowerShell-based tool for managing Windows package managers (Winget and Chocolatey) with a web interface and comprehensive logging.
+A comprehensive PowerShell-based tool for managing Windows package managers (Winget and Chocolatey) with a web interface, WebSocket integration, and advanced logging capabilities.
 
 ## Project Structure
 
@@ -9,16 +9,21 @@ twin-tool/
 ├── src/
 │   ├── client/
 │   │   └── public/
-│   │       └── index.html         # Web interface
+│   │       └── index.html         # Web interface with WebSocket support
 │   ├── server/
-│   │   └── server.ps1            # HTTP server implementation
+│   │   └── server.ps1            # HTTP server & WebSocket implementation
 │   └── services/
-│       ├── wingetService.ps1     # Winget operations
-│       ├── chocoService.ps1      # Chocolatey operations
-│       └── logService.ps1        # Logging system
+│       ├── wingetService.ps1             # Winget core operations
+│       ├── chocoService.ps1              # Chocolatey core operations
+│       ├── winget_package_status_Service.ps1    # Winget package status management
+│       ├── choco_package_status_Service.ps1     # Chocolatey package status management
+│       ├── package_status_cache_service.ps1     # Package status caching
+│       └── logService.ps1                # Centralized logging system
 ├── logs/                         # Log files directory
 │   ├── terminal_*.log           # Server-side logs
 │   └── gui_*.log               # Client-side logs
+├── winget_packages_list.json    # Winget package definitions
+├── choco_packages_list.json     # Chocolatey package definitions
 └── start.bat                    # Startup script
 ```
 
@@ -26,138 +31,260 @@ twin-tool/
 
 ### 1. Package Manager Operations
 - **Winget Integration**
-  - Version checking
-  - Installation status verification
-  - Error handling and reporting
+  - Version checking and status monitoring
+  - Package installation/uninstallation
+  - Bulk status checking
+  - Real-time status updates
+  - Package operation queue management
 
 - **Chocolatey Integration**
-  - Version checking
-  - Installation/Uninstallation
-  - Multiple installation methods (winget/web installer)
-  - Status monitoring
+  - Installation/Uninstallation of Chocolatey itself
+  - Package management with version control
+  - Status monitoring and caching
+  - Bulk operations support
+  - Operation queue management
 
 ### 2. Server Features
-- Dynamic port selection (9000-9010)
-- CORS support
-- RESTful API endpoints
-- Error handling
-- Request/Response logging
+- **HTTP Server**
+  - Dynamic port selection (9000-9010)
+  - CORS support
+  - RESTful API endpoints
+  - Comprehensive error handling
+  - Request/Response logging
 
-### 3. Logging System
-- **Dual Logging System**
-  - Terminal logs for server operations
-  - GUI logs for user interactions
-  - Timestamp-based log files
-  - Session-specific logging
+- **WebSocket Server**
+  - Real-time terminal output streaming
+  - Automatic reconnection handling
+  - Connection status monitoring
+  - Event-based communication
 
-- **Log Types**
+### 3. Advanced Logging System
+- **Multi-Channel Logging**
+  - Terminal logs (server operations)
+  - GUI logs (user interactions)
+  - WebSocket communication logs
+  - Operation queue logs
+
+- **Log Categories**
   - INFO: General information
-  - DEBUG: Detailed process information
+  - DEBUG: Detailed debugging data
   - SUCCESS: Successful operations
   - WARNING: Non-critical issues
   - ERROR: Critical issues
-  - REQUEST: Incoming requests
-  - RESPONSE: Outgoing responses
+  - REQUEST: API requests
+  - RESPONSE: Server responses
 
 ### 4. Web Interface
-- Clean, modern design
-- Real-time status updates
-- Toggle switch for Chocolatey installation
-- Error handling and user feedback
-- Responsive layout
+- **Modern UI Components**
+  - Tab-based navigation
+  - Package status cards
+  - Real-time status indicators
+  - Operation controls
+  - Terminal output viewer
+
+- **Features**
+  - Real-time WebSocket updates
+  - Package operation queue
+  - Bulk refresh capabilities
+  - Status caching
+  - Error handling with visual feedback
 
 ## API Endpoints
 
+### Winget Endpoints
 1. `/api/winget-version`
    - Method: GET
-   - Returns: Winget version information
+   - Returns: Current Winget version
 
-2. `/api/choco-version`
+2. `/api/winget/packages-list`
    - Method: GET
-   - Returns: Chocolatey installation status and version
+   - Returns: List of managed Winget packages
 
-3. `/api/choco-install`
+3. `/api/winget/bulk-package-status`
+   - Method: POST
+   - Body: `{ appId, refresh }`
+   - Returns: Package installation status
+
+4. `/api/winget/single-package-status`
+   - Method: POST
+   - Body: `{ appId, refresh }`
+   - Returns: Single package status
+
+5. `/api/winget/install-package`
+   - Method: POST
+   - Body: `{ appId }`
+   - Action: Initiates package installation
+
+6. `/api/winget/uninstall-package`
+   - Method: POST
+   - Body: `{ appId }`
+   - Action: Initiates package uninstallation
+
+### Chocolatey Endpoints
+1. `/api/choco-version`
+   - Method: GET
+   - Returns: Chocolatey status and version
+
+2. `/api/choco/packages-list`
+   - Method: GET
+   - Returns: List of managed Chocolatey packages
+
+3. `/api/choco/bulk-package-status`
+   - Method: POST
+   - Body: `{ appId, refresh }`
+   - Returns: Package installation status
+
+4. `/api/choco/single-package-status`
+   - Method: POST
+   - Body: `{ appId, refresh }`
+   - Returns: Single package status
+
+5. `/api/choco/install-package`
+   - Method: POST
+   - Body: `{ appId }`
+   - Action: Initiates package installation
+
+6. `/api/choco/uninstall-package`
+   - Method: POST
+   - Body: `{ appId }`
+   - Action: Initiates package uninstallation
+
+7. `/api/choco-install`
    - Method: GET
    - Action: Installs Chocolatey
-   - Returns: Installation status
 
-4. `/api/choco-uninstall`
+8. `/api/choco-uninstall`
    - Method: GET
    - Action: Uninstalls Chocolatey
-   - Returns: Uninstallation status
 
-5. `/api/log`
+### Logging Endpoint
+1. `/api/log`
    - Method: POST
-   - Purpose: GUI event logging
    - Body: `{ message, type, source }`
+   - Purpose: Client-side log submission
+
+## WebSocket Integration
+
+- **Connection**: `ws://localhost:9001`
+- **Message Types**:
+  - system: System messages
+  - stdout: Standard output
+  - stderr: Standard error
+  - command: Command execution
+  - output: General output
 
 ## Getting Started
 
-1. **Prerequisites**
+1. **System Requirements**
    - Windows 10/11
-   - PowerShell 5.0 or higher
+   - PowerShell 5.0+
    - Administrator privileges
+   - .NET Framework 4.5+
 
 2. **Installation**
-   - Clone or download the repository
-   - No additional installation required
+   ```batch
+   git clone https://github.com/yourusername/twin-tool.git
+   cd twin-tool
+   ```
 
 3. **Running the Application**
    ```batch
    start.bat
    ```
    This will:
-   - Start the server with admin privileges
-   - Open the web interface
-   - Initialize logging system
+   - Launch server with admin privileges
+   - Initialize WebSocket server
+   - Open web interface
+   - Start logging system
 
-## Technical Details
+## Configuration Files
 
-### Server Implementation
-- Uses `System.Net.HttpListener`
-- Automatic port selection
-- JSON response format
-- Comprehensive error handling
+### winget_packages_list.json
+```json
+{
+    "packages": [
+        {
+            "app_id": "Package.ID",
+            "app_name": "Display Name",
+            "app_desc": "Description"
+        }
+    ]
+}
+```
 
-### Logging Implementation
-- File-based logging system
-- Separate GUI and terminal logs
-- Automatic log file creation
-- Structured log format
+### choco_packages_list.json
+```json
+{
+    "packages": [
+        {
+            "app_id": "package-id",
+            "app_name": "Display Name",
+            "app_desc": "Description"
+        }
+    ]
+}
+```
 
-### Security Features
-- Admin privilege requirement
-- CORS protection
-- Error message sanitization
-- Safe process handling
+## Core Functions
+
+### Package Management
+- `Get-WingetPackagesList()`: Retrieves Winget packages
+- `Get-ChocoPackagesList()`: Retrieves Chocolatey packages
+- `Install-WingetPackage()`: Installs Winget package
+- `Install-ChocoPackage()`: Installs Chocolatey package
+- `Get-WingetVersion()`: Gets Winget version
+- `Get-ChocoVersion()`: Gets Chocolatey version
+
+### Status Management
+- `Get-WingetBulkPackageStatus()`: Bulk status check
+- `Get-ChocoBulkPackageStatus()`: Bulk status check
+- `Get-CachedPackageStatus()`: Retrieves cached status
+- `Set-CachedPackageStatus()`: Updates status cache
+
+### Logging
+- `Write-TerminalLog()`: Server-side logging
+- `Write-GuiLog()`: Client-side logging
+- `Write-Log()`: General logging function
 
 ## Error Handling
 
 1. **Server-side**
    - Port conflict resolution
    - Process execution monitoring
-   - Exception logging
-   - Client communication errors
+   - WebSocket connection management
+   - Package operation queuing
 
 2. **Client-side**
-   - Connection error handling
-   - Operation status feedback
+   - Connection error recovery
+   - Operation status tracking
    - Visual error indicators
-   - User-friendly messages
+   - Queue management
 
 ## Development Notes
 
-- **Modular Design**: Separate services for different functionalities
-- **Clean Code**: Well-documented and structured codebase
+- **Architecture**: Modular design with separate services
+- **Communication**: Dual HTTP/WebSocket approach
+- **State Management**: Cache-based status tracking
 - **Error Handling**: Comprehensive error management
-- **Logging**: Detailed logging for debugging and monitoring
-- **User Interface**: Intuitive and responsive design
+- **Logging**: Multi-channel logging system
 
 ## Future Enhancements
 
-1. Additional package manager support
-2. Enhanced error reporting
-3. Configuration file support
-4. Log rotation and management
-5. Advanced installation options
-6. Package search functionality 
+1. Package dependency management
+2. Scheduled operations
+3. Package update notifications
+4. Custom package repository support
+5. Advanced filtering and search
+6. Backup and restore functionality
+
+## Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Create Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
