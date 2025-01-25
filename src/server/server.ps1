@@ -178,27 +178,37 @@ function Start-PackageServer {
                     # Winget Bulk Status Endpoint
                     '/api/winget/bulk-status' {
                         if ($request.HttpMethod -eq "POST") {
-                            $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
-                            $data = $body | ConvertFrom-Json
-                            
-                            Write-TerminalLog "Processing bulk status request for ${$data.appIds.Count} packages" "DEBUG"
-                            
+                            Write-TerminalLog "Processing Winget bulk status request" "DEBUG"
                             try {
-                                $results = Get-WingetBulkPackageStatus -AppIds $data.appIds -ForceRefresh:$data.refresh
-                                @{
-                                    success = $true
-                                    results = $results
+                                # Get packages list if no specific IDs provided
+                                $packagesList = Get-WingetPackagesList
+                                if (-not $packagesList.success) {
+                                    throw "Failed to get packages list: $($packagesList.error)"
                                 }
-                            }
-                            catch {
+                                
+                                $appIds = $packagesList.packages | ForEach-Object { $_.app_id }
+                                Write-TerminalLog "Checking status for $($appIds.Count) packages" "DEBUG"
+                                
+                                $results = Get-WingetBulkPackageStatus -AppIds $appIds -ForceRefresh:$true
+                                
+                                if ($results.success) {
+                                    Write-TerminalLog "Bulk status check completed successfully" "SUCCESS"
+                                    @{
+                                        success = $true
+                                        results = $results.results
+                                    }
+                                } else {
+                                    throw $results.error
+                                }
+                            } catch {
+                                Write-TerminalLog "Error during bulk status check: $($_.Exception.Message)" "ERROR"
                                 $response.StatusCode = 500
                                 @{
                                     success = $false
                                     error = $_.Exception.Message
                                 }
                             }
-                        }
-                        else {
+                        } else {
                             $response.StatusCode = 405
                             @{ error = "Method not allowed" }
                         }

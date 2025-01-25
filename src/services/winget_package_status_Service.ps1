@@ -65,83 +65,60 @@ function Get-WingetPackagesList {
 #>
 function Get-WingetBulkPackageStatus {
     param (
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory=$true)]
         [string[]]$AppIds,
         [switch]$ForceRefresh
     )
     
+    Write-TerminalLog "Starting bulk status check for $($AppIds.Count) packages" "DEBUG"
+    
     try {
-        # If no AppIds provided, get all packages from config
-        if (-not $AppIds -or $AppIds.Count -eq 0) {
-            $packagesList = Get-WingetPackagesList
-            if (-not $packagesList.success) {
-                throw "Failed to get packages list: $($packagesList.error)"
-            }
-            $AppIds = $packagesList.packages | ForEach-Object { $_.app_id }
-        }
-        
-        Write-TerminalLog "Starting bulk status check for $($AppIds.Count) Winget packages" "DEBUG"
-        
         $results = @()
-        $currentTime = Get-Date
+        $batchSize = 3  # Process in small batches to avoid overwhelming the system
         
-        # Process packages in smaller batches to avoid timeouts
-        $batchSize = 5
         for ($i = 0; $i -lt $AppIds.Count; $i += $batchSize) {
-            $batch = $AppIds | Select-Object -Skip $i -First $batchSize
+            $batch = $AppIds[$i..([Math]::Min($i + $batchSize - 1, $AppIds.Count - 1))]
             
             foreach ($appId in $batch) {
-                if ([string]::IsNullOrWhiteSpace($appId)) {
-                    Write-TerminalLog "Skipping empty or null package ID" "WARNING"
-                    continue
-                }
-                
-                Write-TerminalLog "Checking status for package: $appId" "DEBUG"
                 try {
-                    # Get package info using PowerShell object handling
-                    $output = winget list --accept-source-agreements --source winget --id $appId | Out-String
-                    Write-TerminalLog "Raw output for $appId : $output" "DEBUG"
-                    
-                    $status = Get-WingetPackageStatusFromOutput -Output $output -AppId $appId
-                    
-                    # Update cache
-                    $script:WingetStatusCache[$appId] = $status
-                    $script:CacheTimestamps[$appId] = $currentTime
-                    
-                    $results += @{
-                        appId = $appId
-                        status = $status
-                    }
-                    
-                    # Log status with correct level
-                    if ($status.installed) {
-                        Write-TerminalLog "Winget package $appId is installed (version $($status.version))" "SUCCESS"
+                    $status = Get-WingetSinglePackageStatus -AppId $appId -ForceRefresh:$ForceRefresh
+                    if ($status) {
+                        $results += @{
+                            appId = $appId
+                            status = $status
+                        }
                     } else {
-                        Write-TerminalLog "Winget package $appId is not installed" "INFO"
+                        Write-TerminalLog "No status returned for $appId" "WARNING"
+                        $results += @{
+                            appId = $appId
+                            status = @{
+                                installed = $false
+                                version = $null
+                                error = "Failed to get status"
+                            }
+                        }
                     }
-                }
-                catch {
-                    Write-TerminalLog "Error checking package $appId status: $($_.Exception.Message)" "ERROR"
-                    # Continue with other packages even if one fails
-                    $status = @{
-                        installed = $false
-                        version = $null
-                        name = $null
-                        source = $null
-                    }
-                    $script:WingetStatusCache[$appId] = $status
-                    $script:CacheTimestamps[$appId] = $currentTime
+                } catch {
+                    Write-TerminalLog "Error checking status for $appId : $($_.Exception.Message)" "ERROR"
                     $results += @{
                         appId = $appId
-                        status = $status
+                        status = @{
+                            installed = $false
+                            version = $null
+                            error = $_.Exception.Message
+                        }
                     }
                 }
             }
             
-            # Small delay between batches to prevent rate limiting
+            # Small delay between batches
             if ($i + $batchSize -lt $AppIds.Count) {
                 Start-Sleep -Milliseconds 100
             }
+        }
+        
+        if ($results.Count -eq 0) {
+            throw "No results returned from bulk status check"
         }
         
         Write-TerminalLog "Bulk status check completed successfully" "SUCCESS"
@@ -149,12 +126,12 @@ function Get-WingetBulkPackageStatus {
             success = $true
             results = $results
         }
-    }
-    catch {
+    } catch {
         Write-TerminalLog "Error during bulk status check: $($_.Exception.Message)" "ERROR"
         return @{
             success = $false
             error = $_.Exception.Message
+            results = @()  # Return empty array instead of null
         }
     }
 }

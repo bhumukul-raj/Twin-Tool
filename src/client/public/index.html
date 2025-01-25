@@ -885,6 +885,7 @@
             for (const pkg of data.packages) {
                 const card = document.createElement('div');
                 card.className = 'package-card';
+                card.setAttribute('data-app-id', pkg.app_id);  // Add data-app-id attribute
                 
                 card.innerHTML = `
                     <h4>${pkg.app_name}</h4>
@@ -965,107 +966,85 @@
          * Performs initial bulk status check for all Winget packages
          */
         async function performWingetBulkStatusCheck() {
+            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
+            packageCards.forEach(card => {
+                const statusBadge = card.querySelector('.status-badge');
+                const toggle = card.querySelector('input[type="checkbox"]');
+                if (statusBadge) {
+                    statusBadge.textContent = 'Checking...';
+                    statusBadge.className = 'status-badge pending';
+                }
+                if (toggle) {
+                    toggle.disabled = true;
+                }
+            });
+            
             try {
                 addLogEntry('Starting Winget bulk status check...', 'DEBUG');
                 
-                const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
+                const response = await fetch('http://localhost:9000/api/winget/bulk-status', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        forceRefresh: false
-                    })
+                    headers: { 'Content-Type': 'application/json' }
                 });
-
-                addLogEntry(`Bulk status check response status: ${response.status}`, 'DEBUG');
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
                 const data = await response.json();
-                addLogEntry(`Received bulk status data: ${JSON.stringify(data)}`, 'DEBUG');
-                
-                // Handle nested response structure
-                const results = data.status?.results;
-                if (!results) {
-                    throw new Error('Invalid response format from server - missing results array');
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to get bulk status');
                 }
-
-                addLogEntry(`Processing status updates for ${results.length} packages`, 'DEBUG');
-
-                // Update UI for each package
-                results.forEach(result => {
-                    const { appId, status } = result;
-                    addLogEntry(`Processing status for ${appId}: ${JSON.stringify(status)}`, 'DEBUG');
-                    
-                    // Find package element using the correct data attribute
-                    const packageElement = document.querySelector(`input[data-app-id="${appId}"]`)?.closest('.package-card');
-                    
-                    if (packageElement) {
-                        addLogEntry(`Found package card for ${appId}`, 'DEBUG');
-                        const statusBadge = packageElement.querySelector('.status-badge');
-                        const versionSpan = packageElement.querySelector('.version');
-                        const toggle = packageElement.querySelector('input[type="checkbox"]');
-                        const stopBtn = packageElement.querySelector('.stop-btn');
-
-                        if (status.installed) {
-                            addLogEntry(`Updating UI for installed package ${appId} (version ${status.version})`, 'DEBUG');
-                            statusBadge.textContent = 'Installed';
-                            statusBadge.classList.remove('not-installed');
-                            statusBadge.classList.add('installed');
-                            versionSpan.textContent = status.version || '';
-                            toggle.checked = true;
-                        } else {
-                            addLogEntry(`Updating UI for not installed package ${appId}`, 'DEBUG');
-                            statusBadge.textContent = 'Not Installed';
-                            statusBadge.classList.remove('installed');
-                            statusBadge.classList.add('not-installed');
-                            versionSpan.textContent = '';
-                            toggle.checked = false;
-                        }
-
-                        // Hide stop button if it exists
-                        if (stopBtn) {
-                            stopBtn.style.display = 'none';
-                        }
-
-                        // Re-enable toggle
-                        if (toggle) {
-                            toggle.disabled = false;
-                        }
-                        
-                        addLogEntry(`UI update completed for ${appId}`, 'DEBUG');
-                    } else {
-                        addLogEntry(`Package element not found for ${appId}`, 'WARNING');
-                    }
-                });
-
-                addLogEntry('Bulk status check completed successfully', 'SUCCESS');
                 
                 // Cache the results
                 const statusCache = {};
-                results.forEach(result => {
-                    statusCache[result.appId] = result.status;
-                });
-                sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
-                addLogEntry('Status cache updated', 'DEBUG');
                 
+                // Update UI with results
+                data.results.forEach(result => {
+                    const { appId, status } = result;
+                    statusCache[appId] = status;
+                    
+                    const card = document.querySelector(`#winget-package-grid .package-card[data-app-id="${appId}"]`);
+                    if (card) {
+                        const statusBadge = card.querySelector('.status-badge');
+                        const versionSpan = card.querySelector('.version');
+                        const toggle = card.querySelector('input[type="checkbox"]');
+
+                        if (status.installed) {
+                            statusBadge.textContent = 'Installed';
+                            statusBadge.className = 'status-badge installed';
+                            versionSpan.textContent = status.version || '';
+                            toggle.checked = true;
+                            addLogEntry(`Winget package ${appId} is installed (version ${status.version || 'unknown'})`, 'SUCCESS');
+                        } else {
+                            statusBadge.textContent = 'Not Installed';
+                            statusBadge.className = 'status-badge not-installed';
+                            versionSpan.textContent = '';
+                            toggle.checked = false;
+                            addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
+                        }
+                            toggle.disabled = false;
+                    }
+                });
+
+                // Cache the status data
+                sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
+                addLogEntry('Bulk status check completed successfully', 'SUCCESS');
             } catch (error) {
-                console.error('Error during bulk status check:', error);
                 addLogEntry(`Error during bulk status check: ${error.message}`, 'ERROR');
                 
-                // Update all status badges to show error
-                const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
+                // Show error state for all packages
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
+                    const toggle = card.querySelector('input[type="checkbox"]');
                     if (statusBadge) {
                         statusBadge.textContent = 'Error';
                         statusBadge.className = 'status-badge error';
                     }
+                    if (toggle) {
+                        toggle.disabled = false;
+                    }
                 });
-                addLogEntry('Updated all status badges to error state', 'DEBUG');
             }
         }
 
@@ -1076,65 +1055,48 @@
          */
         async function handleWingetPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
+            if (!card) return;
+
             const statusBadge = card.querySelector('.status-badge');
             const stopBtn = card.querySelector('.stop-btn');
+            if (!statusBadge || !stopBtn) return;
+
             const action = toggle.checked ? 'install' : 'uninstall';
             const originalState = !toggle.checked;
+            
+            toggle.disabled = true;
+            stopBtn.style.display = 'flex';
             
             try {
                 addLogEntry(`Starting ${action} for Winget package ${appId}...`, 'INFO');
                 statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                toggle.disabled = true;
-                stopBtn.style.display = 'flex';
+                statusBadge.className = 'status-badge pending';
                 
-                const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
+                const data = await makeApiCall(
+                    `http://localhost:9000/api/winget/${action}-package`,
+                    {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ appId })
-                });
+                }
+                );
                 
-                const data = await response.json();
                 if (!data.success) {
                     throw new Error(data.error || `Failed to ${action} package`);
                 }
-                
-                // Update UI with final status
-                updatePackageCardStatus(card, data.finalStatus);
-                stopBtn.style.display = 'none';
-                toggle.disabled = false;
-                
-                addLogEntry(`Successfully ${action}ed Winget package ${appId}`, 'SUCCESS');
-                
-            } catch (error) {
-                addLogEntry(`Error during Winget package ${action}: ${error.message}`, 'ERROR');
-                statusBadge.textContent = 'Error';
-                statusBadge.className = 'status-badge error';
-                toggle.checked = originalState;
-                toggle.disabled = false;
-                stopBtn.style.display = 'none';
-            }
-        }
 
-        function updatePackageCardStatus(card, status) {
-            const statusBadge = card.querySelector('.status-badge');
-            const versionSpan = card.querySelector('.version');
-            const toggle = card.querySelector('.toggle input');
-            const stopBtn = card.querySelector('.stop-btn');
-            
-            if (status.installed) {
-                statusBadge.textContent = 'Installed';
-                statusBadge.className = 'status-badge installed';
-                versionSpan.textContent = status.version || '';
-                toggle.checked = true;
-            } else {
-                statusBadge.textContent = 'Not Installed';
-                statusBadge.className = 'status-badge not-installed';
-                versionSpan.textContent = '';
-                toggle.checked = false;
+                statusBadge.textContent = toggle.checked ? 'Installed' : 'Not Installed';
+                statusBadge.className = `status-badge ${toggle.checked ? 'success' : 'warning'}`;
+                addLogEntry(`Successfully ${action}ed Winget package ${appId}`, 'SUCCESS');
+            } catch (error) {
+                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
+                toggle.checked = originalState;
+                statusBadge.textContent = originalState ? 'Installed' : 'Not Installed';
+                statusBadge.className = `status-badge ${originalState ? 'success' : 'warning'}`;
+            } finally {
+                toggle.disabled = false;
+                stopBtn.style.display = 'none';
             }
-            
-            toggle.disabled = false;
-            stopBtn.style.display = 'none';
         }
 
         /**
@@ -1622,6 +1584,54 @@
                 });
             } finally {
                 bulkRefreshBtn.disabled = false;
+            }
+        }
+
+        /**
+         * Retries a failed API call with exponential backoff
+         */
+        async function retryWithBackoff(fn, retries = 3, backoff = 300) {
+            try {
+                return await fn();
+            } catch (error) {
+                if (retries === 0) throw error;
+                
+                await new Promise(resolve => setTimeout(resolve, backoff));
+                return retryWithBackoff(fn, retries - 1, backoff * 2);
+            }
+        }
+
+        /**
+         * Makes an API call with timeout and retry support
+         */
+        async function makeApiCall(url, options = {}, timeout = 5000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            try {
+                const response = await retryWithBackoff(async () => {
+                    try {
+                        const res = await fetch(url, {
+                            ...options,
+                            signal: controller.signal
+                        });
+                        
+                        if (!res.ok) {
+                            throw new Error(`HTTP error! status: ${res.status}`);
+                        }
+                        
+                        return res;
+                    } catch (error) {
+                        if (error.name === 'AbortError') {
+                            throw new Error('Request timed out');
+                        }
+                        throw error;
+                    }
+                });
+                
+                return await response.json();
+            } finally {
+                clearTimeout(timeoutId);
             }
         }
     </script>
