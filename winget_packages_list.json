@@ -6,14 +6,79 @@
             "app_desc": "Video conferencing and communication software"
         },
         {
-            "app_id": "Mozilla.Firefox",
-            "app_name": "Mozilla Firefox",
-            "app_desc": "Open-source web browser"
+            "app_id": "Google.Chrome",
+            "app_name": "Google Chrome",
+            "app_desc": "Web browser by Google"
+        },
+        {
+            "app_id": "Brave.Brave",
+            "app_name": "Brave",
+            "app_desc": "Privacy-focused web browser"
         },
         {
             "app_id": "Git.Git",
             "app_name": "Git",
             "app_desc": "Version control system for tracking changes in source code"
+        },
+        {
+            "app_id": "Microsoft.VisualStudioCode",
+            "app_name": "Visual Studio Code",
+            "app_desc": "Code editor for development by Microsoft"
+        },
+        {
+            "app_id": "GitHub.GitHubDesktop",
+            "app_name": "GitHub Desktop",
+            "app_desc": "GitHub Desktop application for GitHub repositories"
+        },
+        {
+            "app_id": "Foundry376.Mailspring",
+            "app_name": "Mailspring",
+            "app_desc": "Cross-platform email client"
+        },
+        {
+            "app_id": "Anaconda.Anaconda3",
+            "app_name": "Anaconda",
+            "app_desc": "Python and R distribution for scientific computing"
+        },
+        {
+            "app_id": "Microsoft.SQLServerManagementStudio",
+            "app_name": "SQL Server Management Studio",
+            "app_desc": "SQL Server database management tool"
+        },
+        {
+            "app_id": "Microsoft.PowerBI",
+            "app_name": "Power BI",
+            "app_desc": "Business analytics service by Microsoft"
+        },
+        {
+            "app_id": "7zip.7zip",
+            "app_name": "7-Zip",
+            "app_desc": "Open-source file archiver and compression tool"
+        },
+        {
+            "app_id": "qBittorrent.qBittorrent",
+            "app_name": "qBittorrent",
+            "app_desc": "Open-source BitTorrent client"
+        },
+        {
+            "app_id": "VideoLAN.VLC",
+            "app_name": "VLC",
+            "app_desc": "Open-source media player"
+        },
+        {
+            "app_id": "Bitwarden.Bitwarden",
+            "app_name": "Bitwarden",
+            "app_desc": "Password manager"
+        },
+        {
+            "app_id": "Telegram.TelegramDesktop",
+            "app_name": "Telegram Desktop",
+            "app_desc": "Messaging app with a focus on speed and security"
+        },
+        {
+            "app_id": "AOMEI.Backupper",
+            "app_name": "AOMEI Backupper Standard",
+            "app_desc": "Free backup software for Windows"
         }
     ]
 }

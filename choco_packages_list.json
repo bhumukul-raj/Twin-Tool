@@ -11,15 +11,14 @@
             "app_desc": "Uninstaller for removing bloatware and unwanted programs"
         },
         {
+            "app_id": "firefox",
+            "app_name": "Mozilla Firefox",
+            "app_desc": "Open-source web browser"
+        },
+        {
             "app_id": "spacedesk-server",
             "app_name": "spacedesk server",
             "app_desc": "Software that extends your desktop to multiple devices"
-        },
-        {
-            "app_id": "sql-server-2022",
-            "app_name": "SQL Server 2022",
-            "app_desc": "Relational database management system by Microsoft"
-        }
-        
+        }          
     ]
 } 

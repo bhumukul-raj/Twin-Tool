@@ -180,25 +180,56 @@ function Start-PackageServer {
                         if ($request.HttpMethod -eq "POST") {
                             Write-TerminalLog "Processing Winget bulk status request" "DEBUG"
                             try {
-                                # Get packages list if no specific IDs provided
-                                $packagesList = Get-WingetPackagesList
-                                if (-not $packagesList.success) {
-                                    throw "Failed to get packages list: $($packagesList.error)"
-                                }
+                                # Read request body for specific appId
+                                $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                                $data = $body | ConvertFrom-Json
                                 
-                                $appIds = $packagesList.packages | ForEach-Object { $_.app_id }
-                                Write-TerminalLog "Checking status for $($appIds.Count) packages" "DEBUG"
-                                
-                                $results = Get-WingetBulkPackageStatus -AppIds $appIds -ForceRefresh:$true
-                                
-                                if ($results.success) {
-                                    Write-TerminalLog "Bulk status check completed successfully" "SUCCESS"
-                                    @{
-                                        success = $true
-                                        results = $results.results
+                                if ($data.appId) {
+                                    # Single package request
+                                    Write-TerminalLog "Checking status for package: $($data.appId)" "DEBUG"
+                                    $result = Get-WingetBulkPackageStatus -AppIds @($data.appId) -ForceRefresh:$true
+                                    
+                                    if ($result.success) {
+                                        @{
+                                            success = $true
+                                            results = $result.results
+                                        }
+                                    } else {
+                                        $response.StatusCode = 500
+                                        @{
+                                            success = $false
+                                            error = $result.error
+                                        }
                                     }
                                 } else {
-                                    throw $results.error
+                                    # Get packages list if no specific ID provided
+                                    $packagesList = Get-WingetPackagesList
+                                    if (-not $packagesList.success) {
+                                        $response.StatusCode = 500
+                                        @{
+                                            success = $false
+                                            error = "Failed to get packages list: $($packagesList.error)"
+                                        }
+                                    }
+                                    
+                                    $appIds = $packagesList.packages | ForEach-Object { $_.app_id }
+                                    Write-TerminalLog "Checking status for $($appIds.Count) packages" "DEBUG"
+                                    
+                                    # Process all packages
+                                    $result = Get-WingetBulkPackageStatus -AppIds $appIds -ForceRefresh:$true
+                                    
+                                    if ($result.success) {
+                                        @{
+                                            success = $true
+                                            results = $result.results
+                                        }
+                                    } else {
+                                        $response.StatusCode = 500
+                                        @{
+                                            success = $false
+                                            error = $result.error
+                                        }
+                                    }
                                 }
                             } catch {
                                 Write-TerminalLog "Error during bulk status check: $($_.Exception.Message)" "ERROR"

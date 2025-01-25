@@ -364,11 +364,6 @@
             animation: spin 1s linear infinite;
         }
 
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
         .bulk-refresh-btn {
             padding: 8px 16px;
             background: #2196F3;
@@ -429,6 +424,122 @@
         .stop-icon {
             font-size: 12px;
         }
+
+        /* Progress Bar Styles */
+        .progress-container {
+            margin-top: 10px;
+            width: 100%;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #f0f0f0;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #2196F3;
+            width: 0;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        .bulk-progress {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 10px;
+        }
+
+        .bulk-progress .progress-bar {
+            width: 150px;
+        }
+
+        .package-progress {
+            margin-top: 10px;
+        }
+
+        .package-progress .progress-container {
+            margin-top: 5px;
+        }
+
+        /* Add this to your existing styles */
+        .status-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        /* Progress Bar Styles */
+        .bulk-status-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .progress-container {
+            display: none;
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #f0f0f0;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #2196F3;
+            width: 0;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        .bulk-progress {
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .bulk-progress .progress-container {
+            margin-top: 0;
+        }
+
+        .package-progress {
+            margin-top: 10px;
+        }
+
+        /* Animation for progress bars */
+        @keyframes progress-pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .progress-bar-fill.indeterminate {
+            animation: progress-pulse 1.5s infinite;
+            width: 100%;
+            background: linear-gradient(90deg, #2196F3 0%, #64B5F6 50%, #2196F3 100%);
+        }
     </style>
 </head>
 <body>
@@ -463,9 +574,19 @@
         <div id="winget-status" class="tab-content">
             <div class="section">
                 <div class="status-controls">
-                    <button class="bulk-refresh-btn" onclick="forceWingetBulkStatusCheck()">
-                        <span class="refresh-icon">↻</span> Refresh All
-                    </button>
+                    <div class="bulk-status-container">
+                        <button class="bulk-refresh-btn" onclick="forceWingetBulkStatusCheck()">
+                            <span class="refresh-icon">↻</span> Refresh All
+                        </button>
+                        <div class="bulk-progress">
+                            <div class="progress-container">
+                                <div class="progress-bar">
+                                    <div class="progress-bar-fill"></div>
+                                </div>
+                                <div class="progress-text"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="package-grid" id="winget-package-grid">
                     <!-- Winget Packages will be loaded here -->
@@ -476,9 +597,19 @@
         <div id="choco-status" class="tab-content">
             <div class="section">
                 <div class="status-controls">
-                    <button class="bulk-refresh-btn" onclick="forceChocoBulkStatusCheck()">
-                        <span class="refresh-icon">↻</span> Refresh All
-                    </button>
+                    <div class="bulk-status-container">
+                        <button class="bulk-refresh-btn" onclick="forceChocoBulkStatusCheck()">
+                            <span class="refresh-icon">↻</span> Refresh All
+                        </button>
+                        <div class="bulk-progress">
+                            <div class="progress-container">
+                                <div class="progress-bar">
+                                    <div class="progress-bar-fill"></div>
+                                </div>
+                                <div class="progress-text"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="package-grid" id="choco-package-grid">
                     <!-- Chocolatey Packages will be loaded here -->
@@ -908,6 +1039,14 @@
                             </label>
                         </div>
                     </div>
+                    <div class="package-progress">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill"></div>
+                            </div>
+                            <div class="progress-text"></div>
+                        </div>
+                    </div>
                 `;
                 
                 packageGrid.appendChild(card);
@@ -963,10 +1102,53 @@
         }
 
         /**
-         * Performs initial bulk status check for all Winget packages
+         * Progress Bar Management Functions
+         */
+        function showProgress(container, text = '') {
+            const progressContainer = container.querySelector('.progress-container');
+            const progressText = container.querySelector('.progress-text');
+            const progressBarFill = container.querySelector('.progress-bar-fill');
+            
+            progressContainer.style.display = 'block';
+            progressText.textContent = text;
+            progressBarFill.style.width = '0%';
+            progressBarFill.classList.remove('indeterminate');
+        }
+
+        function updateProgress(container, progress, text = '') {
+            const progressBarFill = container.querySelector('.progress-bar-fill');
+            const progressText = container.querySelector('.progress-text');
+            
+            if (progress === -1) {
+                progressBarFill.classList.add('indeterminate');
+            } else {
+                progressBarFill.classList.remove('indeterminate');
+                progressBarFill.style.width = `${progress}%`;
+            }
+            
+            if (text) {
+                progressText.textContent = text;
+            }
+        }
+
+        function hideProgress(container) {
+            const progressContainer = container.querySelector('.progress-container');
+            progressContainer.style.display = 'none';
+        }
+
+        /**
+         * Updated Winget Bulk Status Check
          */
         async function performWingetBulkStatusCheck() {
             const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
+            const bulkProgressContainer = document.querySelector('#winget-status .bulk-progress');
+            const bulkRefreshBtn = document.querySelector('#winget-status .bulk-refresh-btn');
+            const totalPackages = packageCards.length;
+            let completedPackages = 0;
+            
+            showProgress(bulkProgressContainer, 'Starting bulk check...');
+            bulkRefreshBtn.disabled = true;
+            
             packageCards.forEach(card => {
                 const statusBadge = card.querySelector('.status-badge');
                 const toggle = card.querySelector('input[type="checkbox"]');
@@ -982,120 +1164,156 @@
             try {
                 addLogEntry('Starting Winget bulk status check...', 'DEBUG');
                 
-                const response = await fetch('http://localhost:9000/api/winget/bulk-status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to get bulk status');
-                }
-                
-                // Cache the results
+                // Create a status cache object
                 const statusCache = {};
                 
-                // Update UI with results
-                data.results.forEach(result => {
-                    const { appId, status } = result;
-                    statusCache[appId] = status;
+                // Function to update a single package's status
+                function updatePackageStatus(result) {
+                    completedPackages++;
+                    const progress = (completedPackages / totalPackages) * 100;
                     
-                    const card = document.querySelector(`#winget-package-grid .package-card[data-app-id="${appId}"]`);
+                    const card = document.querySelector(`#winget-package-grid .package-card[data-app-id="${result.appId}"]`);
                     if (card) {
                         const statusBadge = card.querySelector('.status-badge');
                         const versionSpan = card.querySelector('.version');
                         const toggle = card.querySelector('input[type="checkbox"]');
-
-                        if (status.installed) {
+                        
+                        if (result.status.installed) {
                             statusBadge.textContent = 'Installed';
                             statusBadge.className = 'status-badge installed';
-                            versionSpan.textContent = status.version || '';
+                            versionSpan.textContent = result.status.version || '';
                             toggle.checked = true;
-                            addLogEntry(`Winget package ${appId} is installed (version ${status.version || 'unknown'})`, 'SUCCESS');
+                            addLogEntry(`Winget package ${result.appId} is installed (version ${result.status.version || 'unknown'})`, 'SUCCESS');
                         } else {
                             statusBadge.textContent = 'Not Installed';
                             statusBadge.className = 'status-badge not-installed';
                             versionSpan.textContent = '';
                             toggle.checked = false;
-                            addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
+                            addLogEntry(`Winget package ${result.appId} is not installed`, 'INFO');
                         }
-                            toggle.disabled = false;
+                        toggle.disabled = false;
+                        
+                        // Cache the status
+                        statusCache[result.appId] = result.status;
                     }
-                });
-
-                // Cache the status data
-                sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
-                addLogEntry('Bulk status check completed successfully', 'SUCCESS');
-            } catch (error) {
-                addLogEntry(`Error during bulk status check: ${error.message}`, 'ERROR');
+                    
+                    // Update progress bar
+                    if (completedPackages >= totalPackages) {
+                        // All packages processed - show completion
+                        updateProgress(bulkProgressContainer, 100, 'Status check complete');
+                        setTimeout(() => {
+                            hideProgress(bulkProgressContainer);
+                            bulkRefreshBtn.disabled = false;
+                        }, 1000);
+                        
+                        // Store the status cache in sessionStorage
+                        sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
+                        addLogEntry('Winget bulk status check completed successfully', 'SUCCESS');
+                    } else {
+                        // Still processing - show current package
+                        updateProgress(bulkProgressContainer, progress, `Checking packages (${completedPackages}/${totalPackages})...`);
+                    }
+                }
                 
-                // Show error state for all packages
+                // Process each package one by one
+                for (const card of packageCards) {
+                    const appId = card.getAttribute('data-app-id');
+                    try {
+                        const response = await fetch('http://localhost:9000/api/winget/bulk-status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ appId })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        if (!data.success) {
+                            throw new Error(data.error || 'Failed to get status');
+                        }
+
+                        // Update the UI for this package
+                        if (data.results && data.results.length > 0) {
+                            updatePackageStatus(data.results[0]);
+                        }
+                    } catch (error) {
+                        addLogEntry(`Error checking status for ${appId}: ${error.message}`, 'ERROR');
+                        const statusBadge = card.querySelector('.status-badge');
+                        const toggle = card.querySelector('input[type="checkbox"]');
+                        statusBadge.textContent = 'Error';
+                        statusBadge.className = 'status-badge not-installed';
+                        toggle.disabled = false;
+                        
+                        // Update progress even for failed checks
+                        completedPackages++;
+                        const progress = (completedPackages / totalPackages) * 100;
+                        updateProgress(bulkProgressContainer, progress, `Error checking ${appId}`);
+                        
+                        // Check if this was the last package
+                        if (completedPackages >= totalPackages) {
+                            setTimeout(() => {
+                                hideProgress(bulkProgressContainer);
+                                bulkRefreshBtn.disabled = false;
+                            }, 1000);
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                updateProgress(bulkProgressContainer, 100, 'Error during bulk check');
+                setTimeout(() => {
+                    hideProgress(bulkProgressContainer);
+                    bulkRefreshBtn.disabled = false;
+                }, 2000);
+                
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
                     const toggle = card.querySelector('input[type="checkbox"]');
-                    if (statusBadge) {
-                        statusBadge.textContent = 'Error';
-                        statusBadge.className = 'status-badge error';
-                    }
-                    if (toggle) {
-                        toggle.disabled = false;
-                    }
+                    statusBadge.textContent = 'Error';
+                    statusBadge.className = 'status-badge not-installed';
+                    toggle.disabled = false;
                 });
+                
+                addLogEntry(`Error during Winget bulk status check: ${error.message}`, 'ERROR');
             }
         }
 
         /**
-         * Handles Winget package installation/uninstallation
-         * @param {string} appId - The package identifier
-         * @param {HTMLElement} toggle - The toggle button element
+         * Updated Winget Package Toggle Handler
          */
         async function handleWingetPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
-            if (!card) return;
-
-            const statusBadge = card.querySelector('.status-badge');
-            const stopBtn = card.querySelector('.stop-btn');
-            if (!statusBadge || !stopBtn) return;
-
+            const progressContainer = card.querySelector('.package-progress');
             const action = toggle.checked ? 'install' : 'uninstall';
-            const originalState = !toggle.checked;
             
-            toggle.disabled = true;
-            stopBtn.style.display = 'flex';
+            showProgress(progressContainer, `Starting ${action}...`);
+            updateProgress(progressContainer, -1); // Show indeterminate progress
             
             try {
-                addLogEntry(`Starting ${action} for Winget package ${appId}...`, 'INFO');
-                statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                statusBadge.className = 'status-badge pending';
-                
-                const data = await makeApiCall(
-                    `http://localhost:9000/api/winget/${action}-package`,
-                    {
+                const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ appId })
-                }
-                );
+                });
                 
+                const data = await response.json();
                 if (!data.success) {
                     throw new Error(data.error || `Failed to ${action} package`);
                 }
-
-                statusBadge.textContent = toggle.checked ? 'Installed' : 'Not Installed';
-                statusBadge.className = `status-badge ${toggle.checked ? 'success' : 'warning'}`;
-                addLogEntry(`Successfully ${action}ed Winget package ${appId}`, 'SUCCESS');
+                
+                updateProgress(progressContainer, 100, 'Complete!');
+                setTimeout(() => {
+                    hideProgress(progressContainer);
+                }, 1000);
+                
             } catch (error) {
-                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
-                toggle.checked = originalState;
-                statusBadge.textContent = originalState ? 'Installed' : 'Not Installed';
-                statusBadge.className = `status-badge ${originalState ? 'success' : 'warning'}`;
-            } finally {
-                toggle.disabled = false;
-                stopBtn.style.display = 'none';
+                updateProgress(progressContainer, 100, 'Error!');
+                setTimeout(() => {
+                    hideProgress(progressContainer);
+                }, 2000);
+                toggle.checked = !toggle.checked;
             }
         }
 
@@ -1243,6 +1461,14 @@
                             </label>
                         </div>
                     </div>
+                    <div class="package-progress">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill"></div>
+                            </div>
+                            <div class="progress-text"></div>
+                        </div>
+                    </div>
                 `;
                 
                 packageGrid.appendChild(card);
@@ -1298,11 +1524,16 @@
         }
 
         /**
-         * Performs initial bulk status check for all Chocolatey packages
+         * Updated Chocolatey Bulk Status Check
          */
         async function performInitialChocoBulkCheck() {
             const packageCards = document.querySelectorAll('#choco-package-grid .package-card');
+            const bulkProgressContainer = document.querySelector('#choco-status .bulk-progress');
+            const bulkRefreshBtn = document.querySelector('#choco-status .bulk-refresh-btn');
             const statusCache = {};
+            
+            showProgress(bulkProgressContainer, 'Starting bulk check...');
+            bulkRefreshBtn.disabled = true;
             
             try {
                 const packageIds = Array.from(packageCards).map(card => 
@@ -1310,6 +1541,9 @@
                 );
                 
                 addLogEntry(`Checking status for ${packageIds.length} Chocolatey packages...`, 'INFO');
+                
+                let completedChecks = 0;
+                const totalPackages = packageIds.length;
                 
                 // Create an array of promises for all package checks
                 const checkPromises = packageIds.map(async appId => {
@@ -1320,36 +1554,44 @@
                     addLogEntry(`Checking status for Chocolatey package ${appId}...`, 'DEBUG');
                     
                     try {
-                    const response = await fetch('http://localhost:9000/api/choco/bulk-package-status', {
-                    method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ appId, refresh: true })
-                    });
-                    
-                    const data = await response.json();
-                    statusCache[appId] = data.status;  // Store just the status part
-                    
-                    const statusBadge = card.querySelector('.status-badge');
-                    const versionSpan = card.querySelector('.version');
-                    const toggle = card.querySelector('input[type="checkbox"]');
-                    
-                    if (data.status && data.status.installed) {
-                        statusBadge.textContent = 'Installed';
-                        statusBadge.className = 'status-badge installed';
-                        versionSpan.textContent = data.status.version || '';
-                        toggle.checked = true;
-                        addLogEntry(`Chocolatey package ${appId} is installed (version ${data.status.version || 'unknown'})`, 'SUCCESS');
-                    } else {
-                        statusBadge.textContent = 'Not Installed';
-                        statusBadge.className = 'status-badge not-installed';
-                        versionSpan.textContent = '';
-                        toggle.checked = false;
-                        addLogEntry(`Chocolatey package ${appId} is not installed`, 'INFO');
-                    }
+                        const response = await fetch('http://localhost:9000/api/choco/bulk-package-status', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ appId, refresh: true })
+                        });
+                        
+                        const data = await response.json();
+                        statusCache[appId] = data.status;
+                        
+                        completedChecks++;
+                        const progress = (completedChecks / totalPackages) * 100;
+                        updateProgress(bulkProgressContainer, progress, `Checking packages (${completedChecks}/${totalPackages})...`);
+                        
+                        const statusBadge = card.querySelector('.status-badge');
+                        const versionSpan = card.querySelector('.version');
+                        const toggle = card.querySelector('input[type="checkbox"]');
+                        
+                        if (data.status && data.status.installed) {
+                            statusBadge.textContent = 'Installed';
+                            statusBadge.className = 'status-badge installed';
+                            versionSpan.textContent = data.status.version || '';
+                            toggle.checked = true;
+                            addLogEntry(`Chocolatey package ${appId} is installed (version ${data.status.version || 'unknown'})`, 'SUCCESS');
+                        } else {
+                            statusBadge.textContent = 'Not Installed';
+                            statusBadge.className = 'status-badge not-installed';
+                            versionSpan.textContent = '';
+                            toggle.checked = false;
+                            addLogEntry(`Chocolatey package ${appId} is not installed`, 'INFO');
+                        }
                         return { appId, success: true };
-            } catch (error) {
+                    } catch (error) {
+                        completedChecks++;
+                        const progress = (completedChecks / totalPackages) * 100;
+                        updateProgress(bulkProgressContainer, progress, `Checking packages (${completedChecks}/${totalPackages})...`);
+                        
                         const statusBadge = card.querySelector('.status-badge');
                         statusBadge.textContent = 'Error';
                         statusBadge.className = 'status-badge not-installed';
@@ -1362,15 +1604,28 @@
                 const results = await Promise.allSettled(checkPromises);
                 const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
                 
+                // Update progress bar to completion
+                updateProgress(bulkProgressContainer, 100, 'Status check complete');
+                setTimeout(() => {
+                    hideProgress(bulkProgressContainer);
+                    bulkRefreshBtn.disabled = false;
+                }, 1000);
+                
                 if (failures.length > 0) {
                     addLogEntry(`${failures.length} Chocolatey package checks failed`, 'WARNING');
                 } else {
-                sessionStorage.setItem('chocoPackageStatus', JSON.stringify(statusCache));
+                    sessionStorage.setItem('chocoPackageStatus', JSON.stringify(statusCache));
                     addLogEntry('Initial Chocolatey bulk status check completed successfully', 'SUCCESS');
                 }
                 
             } catch (error) {
                 addLogEntry(`Error during Chocolatey bulk status check: ${error.message}`, 'ERROR');
+                
+                updateProgress(bulkProgressContainer, 100, 'Error during bulk check');
+                setTimeout(() => {
+                    hideProgress(bulkProgressContainer);
+                    bulkRefreshBtn.disabled = false;
+                }, 2000);
                 
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
@@ -1381,15 +1636,14 @@
         }
 
         /**
-         * Handles Chocolatey package installation/uninstallation
-         * @param {string} appId - The package identifier
-         * @param {HTMLElement} toggle - The toggle button element
+         * Updated Chocolatey Package Toggle Handler
          */
         async function handleChocoPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
             const versionSpan = card.querySelector('.version');
             const stopBtn = card.querySelector('.stop-btn');
+            const progressContainer = card.querySelector('.package-progress');
             const action = toggle.checked ? 'install' : 'uninstall';
             const originalState = !toggle.checked;
             
@@ -1397,10 +1651,12 @@
             statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
             toggle.disabled = true;
             stopBtn.style.display = 'flex';
+            showProgress(progressContainer, `Queued for ${action}...`);
             
             const operation = async () => {
                 try {
                     statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                    updateProgress(progressContainer, 10, `Starting ${action}...`);
                     
                     const response = await fetch(`http://localhost:9000/api/choco/${action}-package`, {
                         method: 'POST',
@@ -1416,8 +1672,12 @@
                     let attempts = 0;
                     let isComplete = false;
 
-                    while (!isComplete) {
+                    while (!isComplete && attempts < CONFIG.MAX_RETRIES) {
                         await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
+                        
+                        const progress = Math.min(90, 10 + (attempts * (80 / CONFIG.MAX_RETRIES)));
+                        updateProgress(progressContainer, progress, `${action === 'install' ? 'Installing' : 'Uninstalling'}...`);
+                        
                         addLogEntry(`Checking ${action} status for Chocolatey package ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
                         
                         const statusResponse = await fetch('http://localhost:9000/api/choco/single-package-status', {
@@ -1428,66 +1688,65 @@
                         
                         const data = await statusResponse.json();
                         
-                        // Check for error status from the server
                         if (data.status && data.status.error) {
                             statusBadge.textContent = 'Error';
                             statusBadge.className = 'status-badge error';
                             toggle.checked = originalState;
                             toggle.disabled = true;
+                            updateProgress(progressContainer, 100, 'Error!');
                             addLogEntry(`Error during Chocolatey package ${action}: ${data.status.error}`, 'ERROR');
                             throw new Error(data.status.error);
                         }
                         
-                        // Handle package status
                         if (data.status) {
-                            // If package is found in choco list, consider it installed regardless of name mismatch
                             const isActuallyInstalled = data.status.version !== null;
                             
                             if (isActuallyInstalled === toggle.checked) {
-                            isComplete = true;
-                            stopBtn.style.display = 'none';  // Hide stop button immediately
-                            toggle.disabled = false;  // Re-enable toggle
-                            
+                                isComplete = true;
+                                stopBtn.style.display = 'none';
+                                toggle.disabled = false;
+                                
+                                updateProgress(progressContainer, 100, 'Complete!');
+                                
                                 if (isActuallyInstalled) {
-                                statusBadge.textContent = 'Installed';
-                                statusBadge.className = 'status-badge installed';
-                                versionSpan.textContent = data.status.version || '';
-                                toggle.checked = true;
-                                addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.status.version || 'unknown'})`, 'SUCCESS');
-                            } else {
-                                statusBadge.textContent = 'Not Installed';
-                                statusBadge.className = 'status-badge not-installed';
-                                versionSpan.textContent = '';
-                                toggle.checked = false;
-                                addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
-                                return;  // Exit the function to prevent further status checks
-                            }
-                            return;  // Exit the function after successful operation
-                        } else {
-                            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                            attempts++;
-                            
-                            if (attempts >= CONFIG.MAX_RETRIES) {
-                                    const timeoutError = `${action} operation timed out after ${attempts} attempts`;
-                                    statusBadge.textContent = 'Error';
-                                    statusBadge.className = 'status-badge error';
-                                    toggle.checked = originalState;
-                                    toggle.disabled = true;
-                                    addLogEntry(timeoutError, 'ERROR');
-                                    throw new Error(timeoutError);
+                                    statusBadge.textContent = 'Installed';
+                                    statusBadge.className = 'status-badge installed';
+                                    versionSpan.textContent = data.status.version || '';
+                                    toggle.checked = true;
+                                    addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.status.version || 'unknown'})`, 'SUCCESS');
+                                } else {
+                                    statusBadge.textContent = 'Not Installed';
+                                    statusBadge.className = 'status-badge not-installed';
+                                    versionSpan.textContent = '';
+                                    toggle.checked = false;
+                                    addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
                                 }
+                                
+                                setTimeout(() => {
+                                    hideProgress(progressContainer);
+                                }, 1000);
+                                
+                                return;
                             }
                         }
+                        
+                        attempts++;
                     }
                     
                 } catch (error) {
                     statusBadge.textContent = 'Error';
                     statusBadge.className = 'status-badge error';
-                    toggle.checked = originalState; // Revert to original state
+                    toggle.checked = originalState;
+                    updateProgress(progressContainer, 100, 'Error!');
                     addLogEntry(`Error during Chocolatey package ${action}: ${error.message}`, 'ERROR');
+                    
+                    setTimeout(() => {
+                        hideProgress(progressContainer);
+                    }, 2000);
+                    
                     throw error;
                 } finally {
-                    toggle.disabled = !isComplete; // Only enable if completed successfully
+                    toggle.disabled = !isComplete;
                     stopBtn.style.display = 'none';
                 }
             };
@@ -1498,10 +1757,15 @@
             } catch (error) {
                 statusBadge.textContent = 'Error';
                 statusBadge.className = 'status-badge error';
-                toggle.checked = originalState; // Revert to original state
-                toggle.disabled = true; // Keep disabled on error
+                toggle.checked = originalState;
+                toggle.disabled = true;
                 stopBtn.style.display = 'none';
+                updateProgress(progressContainer, 100, 'Error!');
                 addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
+                
+                setTimeout(() => {
+                    hideProgress(progressContainer);
+                }, 2000);
             }
         }
 
