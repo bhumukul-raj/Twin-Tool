@@ -245,6 +245,43 @@ function Start-PackageServer {
                         }
                     }
                     
+                    # Operation Progress Endpoint
+                    '/api/winget/operation-progress/{appId}' {
+                        if ($request.HttpMethod -eq "GET") {
+                            $response.Headers.Add("Content-Type", "text/event-stream")
+                            $response.Headers.Add("Cache-Control", "no-cache")
+                            $response.Headers.Add("Connection", "keep-alive")
+                            
+                            try {
+                                $appId = $request.Url.Segments[-1]
+                                $progressFile = Join-Path $env:TEMP "winget_progress_$appId.txt"
+                                
+                                while ($true) {
+                                    if (Test-Path $progressFile) {
+                                        $progress = Get-Content $progressFile | ConvertFrom-Json
+                                        $data = @{
+                                            progress = $progress.percentage
+                                            status = $progress.status
+                                        } | ConvertTo-Json
+                                        
+                                        $message = "data: $data`n`n"
+                                        $buffer = [System.Text.Encoding]::UTF8.GetBytes($message)
+                                        $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                                        $response.OutputStream.Flush()
+                                        
+                                        if ($progress.complete) {
+                                            Remove-Item $progressFile
+                                            break
+                                        }
+                                    }
+                                    Start-Sleep -Milliseconds 100
+                                }
+                            } catch {
+                                Write-TerminalLog "Error in progress stream: $($_.Exception.Message)" "ERROR"
+                            }
+                        }
+                    }
+                    
                     # Chocolatey Version Endpoint
                     '/api/choco-version' {
                         Write-TerminalLog "Processing Chocolatey version check request" "DEBUG"
@@ -331,6 +368,43 @@ function Start-PackageServer {
                         }
                     }
                     
+                    # Operation Progress Endpoint
+                    '/api/choco/operation-progress/{appId}' {
+                        if ($request.HttpMethod -eq "GET") {
+                            $response.Headers.Add("Content-Type", "text/event-stream")
+                            $response.Headers.Add("Cache-Control", "no-cache")
+                            $response.Headers.Add("Connection", "keep-alive")
+                            
+                            try {
+                                $appId = $request.Url.Segments[-1]
+                                $progressFile = Join-Path $env:TEMP "choco_progress_$appId.txt"
+                                
+                                while ($true) {
+                                    if (Test-Path $progressFile) {
+                                        $progress = Get-Content $progressFile | ConvertFrom-Json
+                                        $data = @{
+                                            progress = $progress.percentage
+                                            status = $progress.status
+                                        } | ConvertTo-Json
+                                        
+                                        $message = "data: $data`n`n"
+                                        $buffer = [System.Text.Encoding]::UTF8.GetBytes($message)
+                                        $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                                        $response.OutputStream.Flush()
+                                        
+                                        if ($progress.complete) {
+                                            Remove-Item $progressFile
+                                            break
+                                        }
+                                    }
+                                    Start-Sleep -Milliseconds 100
+                                }
+                            } catch {
+                                Write-TerminalLog "Error in progress stream: $($_.Exception.Message)" "ERROR"
+                            }
+                        }
+                    }
+                    
                     # GUI Logging Endpoint
                     '/api/log' {
                         if ($request.HttpMethod -eq "POST") {
@@ -397,6 +471,7 @@ function Start-PackageServer {
         if ($script:listener) {
             $script:listener.Stop()
             Write-TerminalLog "Server stopped" "INFO"
+            Cleanup-LogService
         }
     }
 }
@@ -415,6 +490,7 @@ function Stop-PackageServer {
             $script:listener.Stop()
             $script:listener.Close()
             Write-TerminalLog "Server stopped successfully" "SUCCESS"
+            Cleanup-LogService
         }
     }
     catch {

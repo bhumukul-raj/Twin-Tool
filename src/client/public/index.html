@@ -1286,10 +1286,13 @@
         async function handleWingetPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
             const progressContainer = card.querySelector('.package-progress');
+            const statusBadge = card.querySelector('.status-badge');
             const action = toggle.checked ? 'install' : 'uninstall';
             
             showProgress(progressContainer, `Starting ${action}...`);
-            updateProgress(progressContainer, -1); // Show indeterminate progress
+            updateProgress(progressContainer, 5, `Preparing to ${action}...`);
+            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+            toggle.disabled = true;
             
             try {
                 const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
@@ -1298,22 +1301,56 @@
                     body: JSON.stringify({ appId })
                 });
                 
+                // Set up SSE for progress updates
+                const eventSource = new EventSource(`http://localhost:9000/api/winget/operation-progress/${appId}`);
+                
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.progress) {
+                        updateProgress(progressContainer, data.progress, data.status || `${action.charAt(0).toUpperCase() + action.slice(1)}ing...`);
+                    }
+                };
+                
+                eventSource.onerror = () => {
+                    eventSource.close();
+                };
+                
                 const data = await response.json();
+                eventSource.close();
+                
                 if (!data.success) {
                     throw new Error(data.error || `Failed to ${action} package`);
                 }
-                
-                updateProgress(progressContainer, 100, 'Complete!');
-                setTimeout(() => {
-                    hideProgress(progressContainer);
-                }, 1000);
+
+                // Update progress based on installation/uninstallation status
+                if (data.installed !== undefined) {
+                    updateProgress(progressContainer, 100, 'Operation complete!');
+                    
+                    // Update status badge and toggle
+                    statusBadge.textContent = data.installed ? 'Installed' : 'Not Installed';
+                    statusBadge.className = `status-badge ${data.installed ? 'installed' : 'not-installed'}`;
+                    toggle.checked = data.installed;
+                    
+                    setTimeout(() => {
+                        hideProgress(progressContainer);
+                        toggle.disabled = false;
+                    }, 1000);
+                } else {
+                    throw new Error('Invalid response from server');
+                }
                 
             } catch (error) {
                 updateProgress(progressContainer, 100, 'Error!');
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge not-installed';
+                
                 setTimeout(() => {
                     hideProgress(progressContainer);
+                    toggle.checked = !toggle.checked;
+                    toggle.disabled = false;
                 }, 2000);
-                toggle.checked = !toggle.checked;
+                
+                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
             }
         }
 
@@ -1648,124 +1685,72 @@
             const originalState = !toggle.checked;
             
             addLogEntry(`Starting ${action} for Chocolatey package ${appId}...`, 'INFO');
-            statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
+            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
             toggle.disabled = true;
             stopBtn.style.display = 'flex';
-            showProgress(progressContainer, `Queued for ${action}...`);
+            showProgress(progressContainer, `Starting ${action}...`);
+            updateProgress(progressContainer, 5, `Preparing to ${action}...`);
             
-            const operation = async () => {
-                try {
-                    statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                    updateProgress(progressContainer, 10, `Starting ${action}...`);
-                    
-                    const response = await fetch(`http://localhost:9000/api/choco/${action}-package`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ appId })
-                    });
-
-                    const responseData = await response.json();
-                    if (!responseData.success && responseData.error) {
-                        throw new Error(responseData.error);
-                    }
-
-                    let attempts = 0;
-                    let isComplete = false;
-
-                    while (!isComplete && attempts < CONFIG.MAX_RETRIES) {
-                        await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
-                        
-                        const progress = Math.min(90, 10 + (attempts * (80 / CONFIG.MAX_RETRIES)));
-                        updateProgress(progressContainer, progress, `${action === 'install' ? 'Installing' : 'Uninstalling'}...`);
-                        
-                        addLogEntry(`Checking ${action} status for Chocolatey package ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
-                        
-                        const statusResponse = await fetch('http://localhost:9000/api/choco/single-package-status', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ appId, refresh: true })
-                        });
-                        
-                        const data = await statusResponse.json();
-                        
-                        if (data.status && data.status.error) {
-                            statusBadge.textContent = 'Error';
-                            statusBadge.className = 'status-badge error';
-                            toggle.checked = originalState;
-                            toggle.disabled = true;
-                            updateProgress(progressContainer, 100, 'Error!');
-                            addLogEntry(`Error during Chocolatey package ${action}: ${data.status.error}`, 'ERROR');
-                            throw new Error(data.status.error);
-                        }
-                        
-                        if (data.status) {
-                            const isActuallyInstalled = data.status.version !== null;
-                            
-                            if (isActuallyInstalled === toggle.checked) {
-                                isComplete = true;
-                                stopBtn.style.display = 'none';
-                                toggle.disabled = false;
-                                
-                                updateProgress(progressContainer, 100, 'Complete!');
-                                
-                                if (isActuallyInstalled) {
-                                    statusBadge.textContent = 'Installed';
-                                    statusBadge.className = 'status-badge installed';
-                                    versionSpan.textContent = data.status.version || '';
-                                    toggle.checked = true;
-                                    addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.status.version || 'unknown'})`, 'SUCCESS');
-                                } else {
-                                    statusBadge.textContent = 'Not Installed';
-                                    statusBadge.className = 'status-badge not-installed';
-                                    versionSpan.textContent = '';
-                                    toggle.checked = false;
-                                    addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
-                                }
-                                
-                                setTimeout(() => {
-                                    hideProgress(progressContainer);
-                                }, 1000);
-                                
-                                return;
-                            }
-                        }
-                        
-                        attempts++;
-                    }
-                    
-                } catch (error) {
-                    statusBadge.textContent = 'Error';
-                    statusBadge.className = 'status-badge error';
-                    toggle.checked = originalState;
-                    updateProgress(progressContainer, 100, 'Error!');
-                    addLogEntry(`Error during Chocolatey package ${action}: ${error.message}`, 'ERROR');
-                    
-                    setTimeout(() => {
-                        hideProgress(progressContainer);
-                    }, 2000);
-                    
-                    throw error;
-                } finally {
-                    toggle.disabled = !isComplete;
-                    stopBtn.style.display = 'none';
-                }
-            };
-
-            // Add operation to queue
             try {
-                await operationQueue.addOperation('choco', appId, operation);
-            } catch (error) {
-                statusBadge.textContent = 'Error';
-                statusBadge.className = 'status-badge error';
-                toggle.checked = originalState;
-                toggle.disabled = true;
-                stopBtn.style.display = 'none';
-                updateProgress(progressContainer, 100, 'Error!');
-                addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
+                const response = await fetch(`http://localhost:9000/api/choco/${action}-package`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId })
+                });
+
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || `Failed to ${action} package`);
+                }
+                
+                // Update progress to show completion
+                updateProgress(progressContainer, 100, 'Operation complete!');
+                
+                // Get the latest status after installation
+                const statusResponse = await fetch('http://localhost:9000/api/choco/single-package-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId, refresh: true })
+                });
+                
+                const statusData = await statusResponse.json();
+                
+                // Update UI based on the latest status
+                if (statusData.status.installed) {
+                    statusBadge.textContent = 'Installed';
+                    statusBadge.className = 'status-badge installed';
+                    versionSpan.textContent = statusData.status.version || '';
+                    toggle.checked = true;
+                    addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${statusData.status.version || 'unknown'})`, 'SUCCESS');
+                } else {
+                    statusBadge.textContent = 'Not Installed';
+                    statusBadge.className = 'status-badge not-installed';
+                    versionSpan.textContent = '';
+                    toggle.checked = false;
+                    addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
+                }
                 
                 setTimeout(() => {
                     hideProgress(progressContainer);
+                    stopBtn.style.display = 'none';
+                    toggle.disabled = false;
+                }, 1000);
+                
+            } catch (error) {
+                updateProgress(progressContainer, 100, 'Error!');
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge not-installed';
+                versionSpan.textContent = '';
+                
+                setTimeout(() => {
+                    hideProgress(progressContainer);
+                    stopBtn.style.display = 'none';
+                    toggle.checked = originalState;
+                    toggle.disabled = false;
                 }, 2000);
+                
+                addLogEntry(`Error during ${action}: ${error.message}`, 'ERROR');
             }
         }
 
@@ -1797,7 +1782,7 @@
                 const versionSpan = card.querySelector('.version');
                 const toggle = card.querySelector('input[type="checkbox"]');
                 
-                if (data.status && data.status.installed) {
+                if (data.status.installed) {
                     statusBadge.textContent = 'Installed';
                     statusBadge.className = 'status-badge installed';
                     versionSpan.textContent = data.status.version || '';

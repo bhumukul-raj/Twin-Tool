@@ -25,6 +25,10 @@ $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $terminalLogFile = Join-Path $logsPath "terminal_$timestamp.log"
 $guiLogFile = Join-Path $logsPath "gui_$timestamp.log"
 
+# Create mutexes for file access synchronization
+$script:terminalLogMutex = New-Object System.Threading.Mutex($false, "Global\TerminalLogMutex")
+$script:guiLogMutex = New-Object System.Threading.Mutex($false, "Global\GuiLogMutex")
+
 # Create log files if they don't exist
 if (-not (Test-Path $terminalLogFile)) {
     New-Item -ItemType File -Path $terminalLogFile | Out-Null
@@ -65,11 +69,28 @@ function Write-Log {
     $color = $LogColors[$Type]
     Write-Host $logMessage -ForegroundColor $color
     
-    # Write to appropriate log file
-    if ($Source -eq "GUI") {
-        Add-Content -Path $guiLogFile -Value $logMessage
-    } else {
-        Add-Content -Path $terminalLogFile -Value $logMessage
+    # Write to appropriate log file with mutex synchronization
+    try {
+        if ($Source -eq "GUI") {
+            $script:guiLogMutex.WaitOne() | Out-Null
+            try {
+                Add-Content -Path $guiLogFile -Value $logMessage -ErrorAction Stop
+            }
+            finally {
+                $script:guiLogMutex.ReleaseMutex()
+            }
+        } else {
+            $script:terminalLogMutex.WaitOne() | Out-Null
+            try {
+                Add-Content -Path $terminalLogFile -Value $logMessage -ErrorAction Stop
+            }
+            finally {
+                $script:terminalLogMutex.ReleaseMutex()
+            }
+        }
+    }
+    catch {
+        Write-Host "Error writing to log file: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -119,5 +140,15 @@ function Get-CurrentLogFiles {
     return @{
         TerminalLog = $terminalLogFile
         GuiLog = $guiLogFile
+    }
+}
+
+# Cleanup function to dispose of mutexes
+function Cleanup-LogService {
+    if ($script:terminalLogMutex) {
+        $script:terminalLogMutex.Close()
+    }
+    if ($script:guiLogMutex) {
+        $script:guiLogMutex.Close()
     }
 } 

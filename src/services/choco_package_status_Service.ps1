@@ -59,87 +59,8 @@ function Get-ChocoBulkPackageStatus {
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Checking installation status for Chocolatey package: $AppId" "DEBUG"
-    
-    if (-not $ForceRefresh) {
-        $cachedStatus = Get-CachedPackageStatus -AppId $AppId
-        if ($cachedStatus) {
-            Write-TerminalLog "Returning cached status for Chocolatey package: $AppId" "DEBUG"
-            return @{
-                status = $cachedStatus
-            }
-        }
-    }
-    
-    try {
-        Write-TerminalLog "Querying Chocolatey for package: $AppId" "DEBUG"
-        # Get all installed packages in one call
-        $result = choco list | Out-String
-        
-        # Parse the output
-        $installed = $false
-        $version = $null
-        
-        # Split into lines and remove empty lines
-        $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
-        
-        # Process each line
-        Write-TerminalLog "Raw choco list output:`n$result" "DEBUG"
-        
-        foreach ($line in $lines) {
-            # Skip the first line (Chocolatey version) and last line (summary)
-            if ($line -match "^Chocolatey\s+v" -or $line -match "^\d+\s+packages installed\.$") {
-                Write-TerminalLog "Skipping line: $line" "DEBUG"
-                continue
-            }
-            
-            # Split line into package name and version
-            $parts = $line -split '\s+'
-            Write-TerminalLog "Line parts: $($parts -join ' | ')" "DEBUG"
-            
-            if ($parts.Count -ge 2) {
-                $packageName = $parts[0]
-                $packageVersion = $parts[1]
-                
-                Write-TerminalLog "Comparing package: '$packageName' (version: $packageVersion) with target: '$AppId'" "DEBUG"
-                
-                # Check if this is our target package (case-insensitive)
-                if ($packageName -ieq $AppId) {
-                    Write-TerminalLog "Found matching package: $packageName v$packageVersion" "SUCCESS"
-                    $installed = $true
-                    $version = $packageVersion
-                    break
-                }
-            } else {
-                Write-TerminalLog "Invalid line format: $line" "WARNING"
-            }
-        }
-        
-        $status = @{
-            installed = $installed
-            version = $version
-        }
-        
-        Write-TerminalLog "Final status for $AppId : $($status | ConvertTo-Json)" "DEBUG"
-        
-        Set-CachedPackageStatus -AppId $AppId -Status $status
-        
-        Write-TerminalLog "Chocolatey package $AppId status: $(if($installed){'Installed v' + $version}else{'Not Installed'})" "INFO"
-        
-        return $status
-    }
-    catch {
-        Write-TerminalLog "Failed to get Chocolatey package status: $($_.Exception.Message)" "ERROR"
-        
-        $status = @{
-            installed = $false
-            version = $null
-        }
-        Set-CachedPackageStatus -AppId $AppId -Status $status
-        return @{
-            status = $status
-        }
-    }
+    # Simply use the single package check since it works correctly
+    return Get-ChocoSinglePackageStatus -AppId $AppId -ForceRefresh:$ForceRefresh
 }
 
 <#
@@ -174,48 +95,47 @@ function Get-ChocoSinglePackageStatus {
     
     try {
         Write-TerminalLog "Querying Chocolatey for single package: $AppId" "DEBUG"
-        $result = choco info $AppId --local-only | Out-String
+        $result = choco list $AppId | Out-String
+        Write-TerminalLog "Raw choco list output:`n$result" "DEBUG"
         
-        # Parse the output
-        $installed = $false
-        $version = $null
+        # If we see "0 packages installed", return not installed immediately
+        if ($result -match "0 packages installed") {
+            $status = @{
+                installed = $false
+                version = $null
+            }
+            Set-CachedPackageStatus -AppId $AppId -Status $status
+            Write-TerminalLog "Chocolatey package $AppId status: Not Installed" "INFO"
+            return $status
+        }
         
+        # Parse the output lines
         $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
         
-        foreach ($line in $lines) {
-            # Look for the "Installed:" line
-            if ($line -match '^\s*Installed:\s*(.+)$') {
-                $installedInfo = $matches[1].Trim()
-                Write-TerminalLog "Found installation info: '$installedInfo'" "DEBUG"
-                if ($installedInfo -ne '(not installed)') {
-                    $installed = $true
-                    $version = $installedInfo
-                }
-                break
+        # Look for a line that starts with our package name (case insensitive)
+        $packageLine = $lines | Where-Object { $_ -match "^$AppId\s+\d" -or $_ -match "^$($AppId.ToUpper())\s+\d" }
+        
+        if ($packageLine) {
+            $parts = $packageLine -split '\s+'
+            $version = $parts[1]
+            
+            $status = @{
+                installed = $true
+                version = $version
             }
-            # Also check for package name line to verify case-insensitive match
-            if ($line -match '^\s*Title:\s*(.+)$') {
-                $packageName = $matches[1].Trim()
-                Write-TerminalLog "Found package title: '$packageName'" "DEBUG"
-                if (-not ($packageName -ieq $AppId)) {
-                    Write-TerminalLog "Package name mismatch: Expected '$AppId', found '$packageName'" "WARNING"
-                }
-            }
-        }
-        
-        $status = @{
-            installed = $installed
-            version = $version
-        }
-        
-        Set-CachedPackageStatus -AppId $AppId -Status $status
-        
-        if ($installed) {
+            
+            Set-CachedPackageStatus -AppId $AppId -Status $status
             Write-TerminalLog "Chocolatey package $AppId status: Installed v$version" "INFO"
-        } else {
-            Write-TerminalLog "Chocolatey package $AppId status: Not Installed" "INFO"
+            return $status
         }
         
+        # If we get here, package not found
+        $status = @{
+            installed = $false
+            version = $null
+        }
+        Set-CachedPackageStatus -AppId $AppId -Status $status
+        Write-TerminalLog "Chocolatey package $AppId status: Not Installed" "INFO"
         return $status
     }
     catch {
@@ -249,66 +169,54 @@ function Install-ChocoPackage {
     Write-TerminalLog "Starting installation of Chocolatey package: $AppId" "INFO"
     
     try {
+        # Clear the cache before installation
+        Clear-PackageStatusCache
+        
         # Run the installation command
         Write-TerminalLog "Running choco install command for $AppId" "DEBUG"
-        $installResult = choco install $AppId -y | Out-String
+        $installResult = choco install $AppId -y --ignore-checksums --no-progress | Out-String
         Write-TerminalLog "Chocolatey install output: $installResult" "DEBUG"
 
-        # Check for common error patterns in the output
-        if ($installResult -match "ERROR: (.+)") {
-            $errorMessage = $matches[1]
+        # Check for various error patterns
+        if ($installResult -match "ERROR: (.+)" -or 
+            $installResult -match "The install of .+ was NOT successful." -or
+            $installResult -match "Access to the path .+ is denied") {
+            $errorMessage = if ($matches[1]) { $matches[1] } else { $installResult }
             Write-TerminalLog "Installation error detected: $errorMessage" "ERROR"
-            
-            # Create a status object with the error
-            $errorStatus = @{
-                installed = $false
-                version = $null
-                error = $errorMessage
-                shouldStopChecking = $true  # Flag to stop status checking
-            }
-            
-            # Cache the error status
-            Set-CachedPackageStatus -AppId $AppId -Status $errorStatus
             
             return @{
                 success = $false
                 message = "Installation failed"
                 error = $errorMessage
-                status = $errorStatus
+                status = @{
+                    installed = $false
+                    version = $null
+                }
             }
         }
 
-        # Verify installation using single package status check
-        Write-TerminalLog "Verifying installation status for $AppId" "DEBUG"
-        $verificationStatus = Get-ChocoSinglePackageStatus -AppId $AppId -ForceRefresh
+        # Wait a moment for installation to complete
+        Start-Sleep -Seconds 2
         
-        if ($verificationStatus.installed) {
-            Write-TerminalLog "Successfully installed Chocolatey package $AppId v$($verificationStatus.version)" "SUCCESS"
+        # Check installation status using Get-ChocoSinglePackageStatus
+        Write-TerminalLog "Verifying installation status for $AppId" "DEBUG"
+        $status = Get-ChocoSinglePackageStatus -AppId $AppId -ForceRefresh
+        
+        if ($status.installed) {
+            Write-TerminalLog "Successfully installed Chocolatey package $AppId v$($status.version)" "SUCCESS"
             return @{
                 success = $true
                 message = "Package installed successfully"
-                version = $verificationStatus.version
-                status = $verificationStatus
+                version = $status.version
+                status = $status
             }
         } else {
-            $errorMsg = "Package installation verification failed"
-            Write-TerminalLog "$errorMsg for $AppId" "ERROR"
-            
-            # Create a status object with the error
-            $errorStatus = @{
-                installed = $false
-                version = $null
-                error = $errorMsg
-                shouldStopChecking = $true  # Flag to stop status checking
-            }
-            
-            # Cache the error status
-            Set-CachedPackageStatus -AppId $AppId -Status $errorStatus
-            
+            $errorMsg = "Package installation verification failed - package not found after install"
+            Write-TerminalLog $errorMsg "ERROR"
             return @{
                 success = $false
                 message = $errorMsg
-                status = $errorStatus
+                status = $status
             }
         }
     }
@@ -316,21 +224,13 @@ function Install-ChocoPackage {
         $errorMsg = "Installation failed: $($_.Exception.Message)"
         Write-TerminalLog "Failed to install Chocolatey package: $($_.Exception.Message)" "ERROR"
         
-        # Create a status object with the error
-        $errorStatus = @{
-            installed = $false
-            version = $null
-            error = $errorMsg
-            shouldStopChecking = $true  # Flag to stop status checking
-        }
-        
-        # Cache the error status
-        Set-CachedPackageStatus -AppId $AppId -Status $errorStatus
-        
         return @{
             success = $false
             message = $errorMsg
-            status = $errorStatus
+            status = @{
+                installed = $false
+                version = $null
+            }
         }
     }
 }
