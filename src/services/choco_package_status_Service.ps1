@@ -21,20 +21,36 @@ function Get-ChocoPackagesList {
     Write-TerminalLog "Reading Chocolatey packages list from JSON..." "DEBUG"
     
     try {
-        $jsonPath = Join-Path $PSScriptRoot "..\..\choco_packages_list.json"
-        $jsonContent = Get-Content -Path $jsonPath -Raw | ConvertFrom-Json
+        # Get the correct path using $PSScriptRoot
+        $scriptPath = $PSScriptRoot
+        $rootPath = Split-Path -Parent (Split-Path -Parent $scriptPath)
+        $jsonPath = Join-Path $rootPath "choco_packages_list.json"
+        
+        Write-TerminalLog "Attempting to read from path: $jsonPath" "DEBUG"
+        
+        if (-not (Test-Path $jsonPath)) {
+            Write-TerminalLog "Chocolatey packages list not found at: $jsonPath" "ERROR"
+            return @{
+                success = $false
+                error = "Packages list file not found"
+            }
+        }
+        
+        $jsonContent = Get-Content -Path $jsonPath -Raw -ErrorAction Stop
+        $packages = $jsonContent | ConvertFrom-Json -ErrorAction Stop
         
         Write-TerminalLog "Successfully loaded Chocolatey packages list" "SUCCESS"
         return @{
             success = $true
-            packages = $jsonContent.packages
+            packages = $packages.packages
         }
     }
     catch {
-        Write-TerminalLog "Failed to read Chocolatey packages list: $($_.Exception.Message)" "ERROR"
+        $errorMsg = "Failed to read Chocolatey packages list: $($_.Exception.Message)"
+        Write-TerminalLog $errorMsg "ERROR"
         return @{
             success = $false
-            error = "Failed to read packages list: $($_.Exception.Message)"
+            error = $errorMsg
         }
     }
 }

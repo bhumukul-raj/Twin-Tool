@@ -8,7 +8,10 @@
 # Import required service modules
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootPath = Split-Path -Parent (Split-Path -Parent $scriptPath)
+
+# Import all required services with full path
 . "$rootPath\src\services\logService.ps1"          # Logging functionality
+. "$rootPath\src\services\package_status_cache_service.ps1"  # Package status cache
 . "$rootPath\src\services\wingetService.ps1"       # Winget operations
 . "$rootPath\src\services\chocoService.ps1"        # Chocolatey operations
 . "$rootPath\src\services\winget_package_status_Service.ps1"  # Package status management

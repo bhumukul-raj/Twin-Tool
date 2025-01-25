@@ -19,6 +19,10 @@ $script:CacheTimestamps = @{}
 $script:MaxInstallCheckRetries = 10  # Maximum number of retries for checking installation status
 $script:RetryDelaySeconds = 5      # Delay between retries
 
+# Add configuration for bulk operations
+$script:BulkOperationTimeout = 300  # 5 minutes timeout for bulk operations
+$script:BatchSize = 5              # Process 5 packages at a time
+
 <#
 .SYNOPSIS
     Gets the list of managed Winget packages from JSON configuration
@@ -71,31 +75,71 @@ function Get-WingetBulkPackageStatus {
     )
 
     try {
-        Write-TerminalLog "Getting status for package(s): $($AppIds -join ', ')" "DEBUG"
+        Write-TerminalLog "Starting bulk status check for $($AppIds.Count) packages" "DEBUG"
         
         $results = @()
-        foreach ($appId in $AppIds) {
-            $status = Get-WingetPackageStatus -AppId $appId -ForceRefresh:$ForceRefresh
-            if ($status.success) {
-                $results += $status.result
-            } else {
-                Write-TerminalLog "Error getting status for package $appId : $($status.error)" "ERROR"
-                return @{
-                    success = $false
-                    error = $status.error
+        $errors = @()
+        $startTime = Get-Date
+        
+        # Process packages in batches
+        for ($i = 0; $i -lt $AppIds.Count; $i += $script:BatchSize) {
+            $batch = $AppIds[$i..([Math]::Min($i + $script:BatchSize - 1, $AppIds.Count - 1))]
+            Write-TerminalLog "Processing batch of $($batch.Count) packages" "DEBUG"
+            
+            foreach ($appId in $batch) {
+                # Check timeout
+                $elapsedSeconds = ((Get-Date) - $startTime).TotalSeconds
+                if ($elapsedSeconds -gt $script:BulkOperationTimeout) {
+                    Write-TerminalLog "Bulk operation timeout reached" "WARNING"
+                    return @{
+                        success = $false
+                        error = "Operation timed out"
+                        partial_results = $results
+                        errors = $errors
+                    }
+                }
+                
+                try {
+                    Write-TerminalLog "Checking status for package: $appId" "DEBUG"
+                    $status = Get-WingetPackageStatus -AppId $appId -ForceRefresh:$ForceRefresh
+                    
+                    if ($status.success) {
+                        $results += $status.result
+                    } else {
+                        $errors += @{
+                            appId = $appId
+                            error = $status.error
+                        }
+                    }
+                }
+                catch {
+                    Write-TerminalLog "Error checking status for $appId : $($_.Exception.Message)" "ERROR"
+                    $errors += @{
+                        appId = $appId
+                        error = $_.Exception.Message
+                    }
                 }
             }
+            
+            # Small delay between batches to prevent overload
+            Start-Sleep -Milliseconds 500
         }
 
+        Write-TerminalLog "Bulk status check completed. Success: $($results.Count), Errors: $($errors.Count)" "INFO"
+        
         return @{
             success = $true
             results = $results
+            errors = $errors
         }
-    } catch {
-        Write-TerminalLog "Error in Get-WingetBulkPackageStatus: $($_.Exception.Message)" "ERROR"
+    } 
+    catch {
+        Write-TerminalLog "Error in bulk status check: $($_.Exception.Message)" "ERROR"
         return @{
             success = $false
             error = $_.Exception.Message
+            partial_results = $results
+            errors = $errors
         }
     }
 }
