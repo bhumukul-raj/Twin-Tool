@@ -431,439 +431,6 @@
         }
     </style>
 </head>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Package Manager Tools</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f0f2f5;
-        }
-
-        .container {
-            width: 70%;
-            margin: 0 auto;
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Tab Styles */
-        .tabs {
-            display: flex;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #e1e4e8;
-        }
-
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: none;
-            background: none;
-            font-size: 16px;
-            color: #586069;
-            position: relative;
-        }
-
-        .tab.active {
-            color: #2196F3;
-            font-weight: bold;
-        }
-
-        .tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            width: 100%;
-            height: 2px;
-            background-color: #2196F3;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .section {
-            margin: 15px 0;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 4px;
-            border: 1px solid #e1e4e8;
-            flex: 1;
-        }
-
-        button {
-            padding: 8px 16px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        button:hover {
-            background: #0056b3;
-        }
-
-        button:disabled {
-            background: #ccc;
-        }
-
-        .toggle {
-            position: relative;
-            display: inline-block;
-            width: 60px;
-            height: 34px;
-            margin-left: 10px;
-        }
-
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 34px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background-color: #2196F3;
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-
-        .result {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 4px;
-            background: white;
-        }
-
-        .error { color: red; }
-        .success { color: green; }
-
-        /* Log Section Styles */
-        .log-container {
-            height: 300px;
-            overflow-y: auto;
-            background: #1e1e1e;
-            color: #fff;
-            padding: 15px;
-            border-radius: 4px;
-            font-family: monospace;
-            margin-bottom: 10px;
-        }
-
-        .log-entry {
-            margin: 5px 0;
-            padding: 5px;
-            border-bottom: 1px solid #333;
-            display: flex;
-            align-items: center;
-        }
-
-        .log-entry.success { color: #28a745; }
-        .log-entry.error { color: #dc3545; }
-        .log-entry.warning { color: #ffc107; }
-        .log-entry.info { color: #17a2b8; }
-        .log-entry.debug { color: #6c757d; }
-        .log-entry.request { color: #9c27b0; }
-        .log-entry.response { color: #4caf50; }
-
-        .log-controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .log-btn {
-            padding: 8px 16px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .log-btn:hover {
-            background: #5a6268;
-        }
-
-        .log-btn i {
-            font-size: 16px;
-        }
-
-        /* Add this to your existing styles */
-        .manager-container {
-            display: flex;
-            gap: 20px;
-            justify-content: space-between;
-        }
-
-        .package-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            padding: 10px;
-        }
-
-        .package-card {
-            background: white;
-            border: 1px solid #e1e4e8;
-            border-radius: 6px;
-            padding: 15px;
-            position: relative;
-        }
-
-        .package-card h4 {
-            margin: 0 0 10px 0;
-            color: #24292e;
-        }
-
-        .package-desc {
-            color: #586069;
-            font-size: 14px;
-            margin-bottom: 15px;
-        }
-
-        .package-status {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 10px;
-            border-top: 1px solid #e1e4e8;
-        }
-
-        .package-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .refresh-btn {
-            padding: 4px 8px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .refresh-btn:hover {
-            background: #5a6268;
-        }
-
-        .refresh-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .refresh-icon {
-            display: inline-block;
-            transition: transform 0.3s ease;
-        }
-
-        .refresh-btn:active .refresh-icon {
-            transform: rotate(180deg);
-        }
-
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .installed {
-            background-color: #28a745;
-            color: white;
-        }
-
-        .not-installed {
-            background-color: #dc3545;
-            color: white;
-        }
-
-        .version {
-            color: #586069;
-            font-size: 12px;
-        }
-
-        .package-toggle {
-            width: 50px;
-            height: 26px;
-            margin: 0;
-        }
-
-        .package-toggle .slider {
-            height: 26px;
-        }
-
-        .package-toggle .slider:before {
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            bottom: 3px;
-        }
-
-        .package-toggle input:checked + .slider:before {
-            transform: translateX(24px);
-        }
-
-        .status-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-controls {
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: flex-end;
-        }
-
-        .bulk-check-btn {
-            padding: 8px 16px;
-            background: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            transition: background-color 0.2s;
-        }
-
-        .bulk-check-btn:hover {
-            background: #1976D2;
-        }
-
-        .bulk-check-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .bulk-check-btn .refresh-icon {
-            display: inline-block;
-            transition: transform 0.3s ease;
-        }
-
-        .bulk-check-btn:disabled .refresh-icon {
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .bulk-refresh-btn {
-            padding: 8px 16px;
-            background: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            transition: background-color 0.2s;
-        }
-
-        .bulk-refresh-btn:hover {
-            background: #1976D2;
-        }
-
-        .bulk-refresh-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .bulk-refresh-btn .refresh-icon {
-            display: inline-block;
-            transition: transform 0.3s ease;
-        }
-
-        .bulk-refresh-btn:disabled .refresh-icon {
-            animation: spin 1s linear infinite;
-        }
-
-        .stop-btn {
-            padding: 4px 8px;
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 5px;
-        }
-
-        .stop-btn:hover {
-            background: #c82333;
-        }
-
-        .stop-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .stop-icon {
-            font-size: 12px;
-        }
-    </style>
-</head>
 <body>
     <div class="container">
         <div class="tabs">
@@ -1354,8 +921,8 @@
                 addLogEntry('Using cached Winget package status data', 'INFO');
                 updateWingetPackageStatusFromCache(JSON.parse(cachedStatus));
             } else {
-                addLogEntry('Performing initial Winget bulk status check...', 'INFO');
-                await performInitialWingetBulkCheck();
+                // Only perform bulk status check once
+                await performWingetBulkStatusCheck();
             }
         }
 
@@ -1381,11 +948,13 @@
                         statusBadge.className = 'status-badge installed';
                         versionSpan.textContent = status.version || '';
                         toggle.checked = true;
+                        addLogEntry(`Winget package ${appId} is installed (version ${status.version || 'unknown'})`, 'SUCCESS');
                     } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
                         versionSpan.textContent = '';
                         toggle.checked = false;
+                        addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
                     }
                 }
             });
@@ -1395,83 +964,108 @@
         /**
          * Performs initial bulk status check for all Winget packages
          */
-        async function performInitialWingetBulkCheck() {
-            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
-            const statusCache = {};
-            
+        async function performWingetBulkStatusCheck() {
             try {
-                const packageIds = Array.from(packageCards).map(card => 
-                    card.querySelector('input[type="checkbox"]').dataset.appId
-                );
+                addLogEntry('Starting Winget bulk status check...', 'DEBUG');
                 
-                addLogEntry(`Checking status for ${packageIds.length} Winget packages...`, 'INFO');
+                const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        forceRefresh: false
+                    })
+                });
+
+                addLogEntry(`Bulk status check response status: ${response.status}`, 'DEBUG');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                addLogEntry(`Received bulk status data: ${JSON.stringify(data)}`, 'DEBUG');
                 
-                // Create an array of promises for all package checks
-                const checkPromises = packageIds.map(async appId => {
-                    const card = Array.from(packageCards).find(card => 
-                        card.querySelector('input[type="checkbox"]').dataset.appId === appId
-                    );
+                // Handle nested response structure
+                const results = data.status?.results;
+                if (!results) {
+                    throw new Error('Invalid response format from server - missing results array');
+                }
+
+                addLogEntry(`Processing status updates for ${results.length} packages`, 'DEBUG');
+
+                // Update UI for each package
+                results.forEach(result => {
+                    const { appId, status } = result;
+                    addLogEntry(`Processing status for ${appId}: ${JSON.stringify(status)}`, 'DEBUG');
                     
-                    addLogEntry(`Checking status for Winget package ${appId}...`, 'DEBUG');
+                    // Find package element using the correct data attribute
+                    const packageElement = document.querySelector(`input[data-app-id="${appId}"]`)?.closest('.package-card');
                     
-                    try {
-                    const response = await fetch('http://localhost:9000/api/winget/bulk-package-status', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ appId, refresh: true })
-                    });
-                    
-                    const data = await response.json();
-                    statusCache[appId] = data;
-                    
-                    const statusBadge = card.querySelector('.status-badge');
-                    const versionSpan = card.querySelector('.version');
-                    const toggle = card.querySelector('input[type="checkbox"]');
-                    
-                    if (data.installed) {
-                        statusBadge.textContent = 'Installed';
-                        statusBadge.className = 'status-badge installed';
-                        versionSpan.textContent = data.version || '';
-                        toggle.checked = true;
-                        addLogEntry(`Winget package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                    if (packageElement) {
+                        addLogEntry(`Found package card for ${appId}`, 'DEBUG');
+                        const statusBadge = packageElement.querySelector('.status-badge');
+                        const versionSpan = packageElement.querySelector('.version');
+                        const toggle = packageElement.querySelector('input[type="checkbox"]');
+                        const stopBtn = packageElement.querySelector('.stop-btn');
+
+                        if (status.installed) {
+                            addLogEntry(`Updating UI for installed package ${appId} (version ${status.version})`, 'DEBUG');
+                            statusBadge.textContent = 'Installed';
+                            statusBadge.classList.remove('not-installed');
+                            statusBadge.classList.add('installed');
+                            versionSpan.textContent = status.version || '';
+                            toggle.checked = true;
+                        } else {
+                            addLogEntry(`Updating UI for not installed package ${appId}`, 'DEBUG');
+                            statusBadge.textContent = 'Not Installed';
+                            statusBadge.classList.remove('installed');
+                            statusBadge.classList.add('not-installed');
+                            versionSpan.textContent = '';
+                            toggle.checked = false;
+                        }
+
+                        // Hide stop button if it exists
+                        if (stopBtn) {
+                            stopBtn.style.display = 'none';
+                        }
+
+                        // Re-enable toggle
+                        if (toggle) {
+                            toggle.disabled = false;
+                        }
+                        
+                        addLogEntry(`UI update completed for ${appId}`, 'DEBUG');
                     } else {
-                        statusBadge.textContent = 'Not Installed';
-                        statusBadge.className = 'status-badge not-installed';
-                        versionSpan.textContent = '';
-                        toggle.checked = false;
-                        addLogEntry(`Winget package ${appId} is not installed`, 'INFO');
-                    }
-                        return { appId, success: true };
-                    } catch (error) {
-                        const statusBadge = card.querySelector('.status-badge');
-                        statusBadge.textContent = 'Error';
-                        statusBadge.className = 'status-badge not-installed';
-                        addLogEntry(`Error checking Winget package ${appId}: ${error.message}`, 'ERROR');
-                        return { appId, success: false, error };
+                        addLogEntry(`Package element not found for ${appId}`, 'WARNING');
                     }
                 });
+
+                addLogEntry('Bulk status check completed successfully', 'SUCCESS');
                 
-                // Wait for all checks to complete
-                const results = await Promise.allSettled(checkPromises);
-                const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
-                
-                if (failures.length > 0) {
-                    addLogEntry(`${failures.length} Winget package checks failed`, 'WARNING');
-                } else {
+                // Cache the results
+                const statusCache = {};
+                results.forEach(result => {
+                    statusCache[result.appId] = result.status;
+                });
                 sessionStorage.setItem('wingetPackageStatus', JSON.stringify(statusCache));
-                    addLogEntry('Initial Winget bulk status check completed successfully', 'SUCCESS');
-                }
+                addLogEntry('Status cache updated', 'DEBUG');
                 
             } catch (error) {
-                addLogEntry(`Error during Winget bulk status check: ${error.message}`, 'ERROR');
+                console.error('Error during bulk status check:', error);
+                addLogEntry(`Error during bulk status check: ${error.message}`, 'ERROR');
                 
+                // Update all status badges to show error
+                const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
                 packageCards.forEach(card => {
                     const statusBadge = card.querySelector('.status-badge');
-                    statusBadge.textContent = 'Error';
-                    statusBadge.className = 'status-badge not-installed';
+                    if (statusBadge) {
+                        statusBadge.textContent = 'Error';
+                        statusBadge.className = 'status-badge error';
+                    }
                 });
+                addLogEntry('Updated all status badges to error state', 'DEBUG');
             }
         }
 
@@ -1483,87 +1077,64 @@
         async function handleWingetPackageToggle(appId, toggle) {
             const card = toggle.closest('.package-card');
             const statusBadge = card.querySelector('.status-badge');
-            const versionSpan = card.querySelector('.version');
             const stopBtn = card.querySelector('.stop-btn');
             const action = toggle.checked ? 'install' : 'uninstall';
+            const originalState = !toggle.checked;
             
-            addLogEntry(`Starting ${action} for Winget package ${appId}...`, 'INFO');
-            statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
-            toggle.disabled = true;
-            stopBtn.style.display = 'flex';
-            
-            const operation = async () => {
-                try {
-                    statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                    
-                    const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ appId })
-                    });
-
-                    let attempts = 0;
-                    let isComplete = false;
-
-                    while (!isComplete) {
-                        await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
-                        addLogEntry(`Checking ${action} status for Winget package ${appId} (attempt ${attempts + 1})...`, 'DEBUG');
-                        
-                        const statusResponse = await fetch('http://localhost:9000/api/winget/single-package-status', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ appId, refresh: true })
-                        });
-                        
-                        const data = await statusResponse.json();
-                        
-                        if (data.installed === toggle.checked) {
-                            isComplete = true;
-                            
-                            if (data.installed) {
-                                statusBadge.textContent = 'Installed';
-                                statusBadge.className = 'status-badge installed';
-                                versionSpan.textContent = data.version || '';
-                                toggle.checked = true;
-                                addLogEntry(`Successfully installed Winget package ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
-                            } else {
-                                statusBadge.textContent = 'Not Installed';
-                                statusBadge.className = 'status-badge not-installed';
-                                versionSpan.textContent = '';
-                                toggle.checked = false;
-                                addLogEntry(`Successfully uninstalled Winget package ${appId}`, 'SUCCESS');
-                            }
-                        } else {
-                            statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
-                            attempts++;
-                            
-                            if (attempts >= CONFIG.MAX_RETRIES) {
-                                throw new Error(`${action} operation timed out after ${attempts} attempts`);
-                            }
-                        }
-                    }
-                    
-                } catch (error) {
-                    statusBadge.textContent = 'Error';
-                    toggle.checked = !toggle.checked;
-                    addLogEntry(`Error during Winget package ${action}: ${error.message}`, 'ERROR');
-                    throw error;
-                } finally {
-                    toggle.disabled = false;
-                    stopBtn.style.display = 'none';
-                }
-            };
-
-            // Add operation to queue
             try {
-                await operationQueue.addOperation('winget', appId, operation);
+                addLogEntry(`Starting ${action} for Winget package ${appId}...`, 'INFO');
+                statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
+                toggle.disabled = true;
+                stopBtn.style.display = 'flex';
+                
+                const response = await fetch(`http://localhost:9000/api/winget/${action}-package`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId })
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || `Failed to ${action} package`);
+                }
+                
+                // Update UI with final status
+                updatePackageCardStatus(card, data.finalStatus);
+                stopBtn.style.display = 'none';
+                toggle.disabled = false;
+                
+                addLogEntry(`Successfully ${action}ed Winget package ${appId}`, 'SUCCESS');
+                
             } catch (error) {
+                addLogEntry(`Error during Winget package ${action}: ${error.message}`, 'ERROR');
                 statusBadge.textContent = 'Error';
-                toggle.checked = !toggle.checked;
+                statusBadge.className = 'status-badge error';
+                toggle.checked = originalState;
                 toggle.disabled = false;
                 stopBtn.style.display = 'none';
-                addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
             }
+        }
+
+        function updatePackageCardStatus(card, status) {
+            const statusBadge = card.querySelector('.status-badge');
+            const versionSpan = card.querySelector('.version');
+            const toggle = card.querySelector('.toggle input');
+            const stopBtn = card.querySelector('.stop-btn');
+            
+            if (status.installed) {
+                statusBadge.textContent = 'Installed';
+                statusBadge.className = 'status-badge installed';
+                versionSpan.textContent = status.version || '';
+                toggle.checked = true;
+            } else {
+                statusBadge.textContent = 'Not Installed';
+                statusBadge.className = 'status-badge not-installed';
+                versionSpan.textContent = '';
+                toggle.checked = false;
+            }
+            
+            toggle.disabled = false;
+            stopBtn.style.display = 'none';
         }
 
         /**
@@ -1594,12 +1165,12 @@
                 const versionSpan = card.querySelector('.version');
                 const toggle = card.querySelector('input[type="checkbox"]');
                 
-                if (data.installed) {
+                if (data.status.installed) {
                     statusBadge.textContent = 'Installed';
                     statusBadge.className = 'status-badge installed';
-                    versionSpan.textContent = data.version || '';
+                    versionSpan.textContent = data.status.version || '';
                     toggle.checked = true;
-                    addLogEntry(`Winget package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                    addLogEntry(`Winget package ${appId} is installed (version ${data.status.version || 'unknown'})`, 'SUCCESS');
                 } else {
                     statusBadge.textContent = 'Not Installed';
                     statusBadge.className = 'status-badge not-installed';
@@ -1618,33 +1189,25 @@
         }
 
         /**
-         * Forces a bulk status check for all Winget packages
+         * Stops a package operation and updates UI
+         * @param {string} manager - The package manager (winget/choco)
+         * @param {string} appId - The package identifier
+         * @param {HTMLElement} button - The stop button element
          */
-        async function forceWingetBulkStatusCheck() {
-            const bulkRefreshBtn = document.querySelector('#winget-status .bulk-refresh-btn');
-            const packageCards = document.querySelectorAll('#winget-package-grid .package-card');
-            
-            addLogEntry('Starting forced Winget bulk status check...', 'INFO');
-            bulkRefreshBtn.disabled = true;
-            
-            try {
-                packageCards.forEach(card => {
+        async function stopPackageOperation(manager, appId, button) {
+            const card = button.closest('.package-card');
                     const statusBadge = card.querySelector('.status-badge');
-                    statusBadge.textContent = 'Checking...';
-                });
-                
-                await performInitialWingetBulkCheck();
-                addLogEntry('Forced Winget bulk status check completed successfully', 'SUCCESS');
-            } catch (error) {
-                addLogEntry(`Error during forced Winget bulk status check: ${error.message}`, 'ERROR');
-                
-                packageCards.forEach(card => {
-                    const statusBadge = card.querySelector('.status-badge');
-                    statusBadge.textContent = 'Error';
-                    statusBadge.className = 'status-badge not-installed';
-                });
-            } finally {
-                bulkRefreshBtn.disabled = false;
+            const toggle = card.querySelector('input[type="checkbox"]');
+            const stopBtn = card.querySelector('.stop-btn');
+            
+            addLogEntry(`Stopping ${manager} operation for package ${appId}...`, 'INFO');
+            
+            if (operationQueue.stopOperation(manager, appId)) {
+                statusBadge.textContent = 'Operation Stopped';
+                toggle.checked = !toggle.checked;
+                toggle.disabled = false;
+                stopBtn.style.display = 'none';
+                addLogEntry(`Successfully stopped ${manager} operation for package ${appId}`, 'SUCCESS');
             }
         }
 
@@ -1759,11 +1322,13 @@
                         statusBadge.className = 'status-badge installed';
                         versionSpan.textContent = status.version || '';
                         toggle.checked = true;
+                        addLogEntry(`Chocolatey package ${appId} is installed (version ${status.version || 'unknown'})`, 'SUCCESS');
                     } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
                         versionSpan.textContent = '';
                         toggle.checked = false;
+                        addLogEntry(`Chocolatey package ${appId} is not installed`, 'INFO');
                     }
                 }
             });
@@ -1802,18 +1367,18 @@
                     });
                     
                     const data = await response.json();
-                    statusCache[appId] = data;
+                    statusCache[appId] = data.status;  // Store just the status part
                     
                     const statusBadge = card.querySelector('.status-badge');
                     const versionSpan = card.querySelector('.version');
                     const toggle = card.querySelector('input[type="checkbox"]');
                     
-                    if (data.installed) {
+                    if (data.status && data.status.installed) {
                         statusBadge.textContent = 'Installed';
                         statusBadge.className = 'status-badge installed';
-                        versionSpan.textContent = data.version || '';
+                        versionSpan.textContent = data.status.version || '';
                         toggle.checked = true;
-                        addLogEntry(`Chocolatey package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                        addLogEntry(`Chocolatey package ${appId} is installed (version ${data.status.version || 'unknown'})`, 'SUCCESS');
                     } else {
                         statusBadge.textContent = 'Not Installed';
                         statusBadge.className = 'status-badge not-installed';
@@ -1864,6 +1429,7 @@
             const versionSpan = card.querySelector('.version');
             const stopBtn = card.querySelector('.stop-btn');
             const action = toggle.checked ? 'install' : 'uninstall';
+            const originalState = !toggle.checked;
             
             addLogEntry(`Starting ${action} for Chocolatey package ${appId}...`, 'INFO');
             statusBadge.textContent = toggle.checked ? 'Queued for Install...' : 'Queued for Uninstall...';
@@ -1880,6 +1446,11 @@
                         body: JSON.stringify({ appId })
                     });
 
+                    const responseData = await response.json();
+                    if (!responseData.success && responseData.error) {
+                        throw new Error(responseData.error);
+                    }
+
                     let attempts = 0;
                     let isComplete = false;
 
@@ -1895,39 +1466,66 @@
                         
                         const data = await statusResponse.json();
                         
-                        if (data.installed === toggle.checked) {
-                            isComplete = true;
+                        // Check for error status from the server
+                        if (data.status && data.status.error) {
+                            statusBadge.textContent = 'Error';
+                            statusBadge.className = 'status-badge error';
+                            toggle.checked = originalState;
+                            toggle.disabled = true;
+                            addLogEntry(`Error during Chocolatey package ${action}: ${data.status.error}`, 'ERROR');
+                            throw new Error(data.status.error);
+                        }
+                        
+                        // Handle package status
+                        if (data.status) {
+                            // If package is found in choco list, consider it installed regardless of name mismatch
+                            const isActuallyInstalled = data.status.version !== null;
                             
-                            if (data.installed) {
+                            if (isActuallyInstalled === toggle.checked) {
+                            isComplete = true;
+                            stopBtn.style.display = 'none';  // Hide stop button immediately
+                            toggle.disabled = false;  // Re-enable toggle
+                            
+                                if (isActuallyInstalled) {
                                 statusBadge.textContent = 'Installed';
                                 statusBadge.className = 'status-badge installed';
-                                versionSpan.textContent = data.version || '';
+                                versionSpan.textContent = data.status.version || '';
                                 toggle.checked = true;
-                                addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.version || 'unknown'})`, 'SUCCESS');
+                                addLogEntry(`Successfully installed Chocolatey package ${appId} (version ${data.status.version || 'unknown'})`, 'SUCCESS');
                             } else {
                                 statusBadge.textContent = 'Not Installed';
                                 statusBadge.className = 'status-badge not-installed';
                                 versionSpan.textContent = '';
                                 toggle.checked = false;
                                 addLogEntry(`Successfully uninstalled Chocolatey package ${appId}`, 'SUCCESS');
+                                return;  // Exit the function to prevent further status checks
                             }
+                            return;  // Exit the function after successful operation
                         } else {
                             statusBadge.textContent = toggle.checked ? 'Installing...' : 'Uninstalling...';
                             attempts++;
                             
                             if (attempts >= CONFIG.MAX_RETRIES) {
-                                throw new Error(`${action} operation timed out after ${attempts} attempts`);
+                                    const timeoutError = `${action} operation timed out after ${attempts} attempts`;
+                                    statusBadge.textContent = 'Error';
+                                    statusBadge.className = 'status-badge error';
+                                    toggle.checked = originalState;
+                                    toggle.disabled = true;
+                                    addLogEntry(timeoutError, 'ERROR');
+                                    throw new Error(timeoutError);
+                                }
                             }
                         }
                     }
                     
                 } catch (error) {
                     statusBadge.textContent = 'Error';
-                    toggle.checked = !toggle.checked;
+                    statusBadge.className = 'status-badge error';
+                    toggle.checked = originalState; // Revert to original state
                     addLogEntry(`Error during Chocolatey package ${action}: ${error.message}`, 'ERROR');
                     throw error;
                 } finally {
-                    toggle.disabled = false;
+                    toggle.disabled = !isComplete; // Only enable if completed successfully
                     stopBtn.style.display = 'none';
                 }
             };
@@ -1937,8 +1535,9 @@
                 await operationQueue.addOperation('choco', appId, operation);
             } catch (error) {
                 statusBadge.textContent = 'Error';
-                toggle.checked = !toggle.checked;
-                toggle.disabled = false;
+                statusBadge.className = 'status-badge error';
+                toggle.checked = originalState; // Revert to original state
+                toggle.disabled = true; // Keep disabled on error
                 stopBtn.style.display = 'none';
                 addLogEntry(`Operation failed: ${error.message}`, 'ERROR');
             }
@@ -1972,12 +1571,12 @@
                 const versionSpan = card.querySelector('.version');
                 const toggle = card.querySelector('input[type="checkbox"]');
                 
-                if (data.installed) {
+                if (data.status && data.status.installed) {
                     statusBadge.textContent = 'Installed';
                     statusBadge.className = 'status-badge installed';
-                    versionSpan.textContent = data.version || '';
+                    versionSpan.textContent = data.status.version || '';
                     toggle.checked = true;
-                    addLogEntry(`Chocolatey package ${appId} is installed (version ${data.version || 'unknown'})`, 'SUCCESS');
+                    addLogEntry(`Chocolatey package ${appId} is installed (version ${data.status.version || 'unknown'})`, 'SUCCESS');
                 } else {
                     statusBadge.textContent = 'Not Installed';
                     statusBadge.className = 'status-badge not-installed';
@@ -2023,29 +1622,6 @@
                 });
             } finally {
                 bulkRefreshBtn.disabled = false;
-            }
-        }
-
-        /**
-         * Stops a package operation and updates UI
-         * @param {string} manager - The package manager (winget/choco)
-         * @param {string} appId - The package identifier
-         * @param {HTMLElement} button - The stop button element
-         */
-        async function stopPackageOperation(manager, appId, button) {
-            const card = button.closest('.package-card');
-            const statusBadge = card.querySelector('.status-badge');
-            const toggle = card.querySelector('input[type="checkbox"]');
-            const stopBtn = card.querySelector('.stop-btn');
-            
-            addLogEntry(`Stopping ${manager} operation for package ${appId}...`, 'INFO');
-            
-            if (operationQueue.stopOperation(manager, appId)) {
-                statusBadge.textContent = 'Operation Stopped';
-                toggle.checked = !toggle.checked;
-                toggle.disabled = false;
-                stopBtn.style.display = 'none';
-                addLogEntry(`Successfully stopped ${manager} operation for package ${appId}`, 'SUCCESS');
             }
         }
     </script>

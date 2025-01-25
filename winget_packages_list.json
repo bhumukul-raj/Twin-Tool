@@ -1,34 +1,19 @@
 {
     "packages": [
         {
-            "app_id": "Google.Chrome",
-            "app_name": "Google Chrome",
-            "app_desc": "Fast and secure web browser"
+            "app_id": "Zoom.Zoom",
+            "app_name": "Zoom",
+            "app_desc": "Video conferencing and communication software"
         },
         {
             "app_id": "Mozilla.Firefox",
             "app_name": "Mozilla Firefox",
-            "app_desc": "Popular open-source web browser"
+            "app_desc": "Open-source web browser"
         },
         {
-            "app_id": "Microsoft.VisualStudioCode",
-            "app_name": "Visual Studio Code",
-            "app_desc": "Code editing. Redefined."
-        },
-        {
-            "app_id": "VideoLAN.VLC",
-            "app_name": "VLC Media Player",
-            "app_desc": "Free and open source multimedia player"
-        },
-        {
-            "app_id": "7zip.7zip",
-            "app_name": "7-Zip",
-            "app_desc": "File archiver with high compression ratio"
-        },
-        {
-            "app_id": "Notepad++.Notepad++",
-            "app_name": "Notepad++",
-            "app_desc": "Free source code editor"
+            "app_id": "Git.Git",
+            "app_name": "Git",
+            "app_desc": "Version control system for tracking changes in source code"
         }
     ]
-} 
+}

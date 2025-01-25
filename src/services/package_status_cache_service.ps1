@@ -20,9 +20,13 @@ function Get-CachedPackageStatus {
         [string]$AppId
     )
     
+    Write-TerminalLog "Checking cache for package: $AppId" "DEBUG"
     if ($script:PackageStatusCache.ContainsKey($AppId)) {
-        return $script:PackageStatusCache[$AppId]
+        $status = $script:PackageStatusCache[$AppId]
+        Write-TerminalLog "Found cached status for $AppId : $($status | ConvertTo-Json)" "DEBUG"
+        return $status
     }
+    Write-TerminalLog "No cached status found for $AppId" "DEBUG"
     return $null
 }
 
@@ -45,6 +49,7 @@ function Set-CachedPackageStatus {
         [hashtable]$Status
     )
     
+    Write-TerminalLog "Caching status for package $AppId : $($Status | ConvertTo-Json)" "DEBUG"
     $script:PackageStatusCache[$AppId] = $Status
 }
 
@@ -57,5 +62,6 @@ function Set-CachedPackageStatus {
     to ensure cache consistency.
 #>
 function Clear-PackageStatusCache {
+    Write-TerminalLog "Clearing package status cache" "DEBUG"
     $script:PackageStatusCache.Clear()
 } 

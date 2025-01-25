@@ -15,6 +15,10 @@ $script:BulkCheckInterval = 900 # 15 minutes
 $script:SingleCheckInterval = 600 # 10 minutes
 $script:CacheTimestamps = @{}
 
+# Add configuration for retry limits
+$script:MaxInstallCheckRetries = 10  # Maximum number of retries for checking installation status
+$script:RetryDelaySeconds = 5      # Delay between retries
+
 <#
 .SYNOPSIS
     Gets the list of managed Winget packages from JSON configuration
@@ -61,111 +65,173 @@ function Get-WingetPackagesList {
 #>
 function Get-WingetBulkPackageStatus {
     param (
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         [string[]]$AppIds,
         [switch]$ForceRefresh
     )
     
-    Write-TerminalLog "Starting bulk status check for ${AppIds.Count} Winget packages" "DEBUG"
-    
-    # Check if we need to refresh any packages
-    $needsRefresh = $ForceRefresh
-    if (-not $needsRefresh) {
-        $currentTime = Get-Date
-        foreach ($appId in $AppIds) {
-            if (-not $script:CacheTimestamps[$appId] -or 
-                ($currentTime - $script:CacheTimestamps[$appId]).TotalSeconds -gt $script:BulkCheckInterval) {
-                $needsRefresh = $true
-                break
-            }
-        }
-    }
-    
-    # Return cached results if no refresh needed
-    if (-not $needsRefresh) {
-        Write-TerminalLog "Using cached bulk status results" "DEBUG"
-        return $AppIds | ForEach-Object {
-            @{
-                appId = $_
-                status = $script:WingetStatusCache[$_]
-            }
-        }
-    }
-
     try {
-        # Get all installed packages in one call
-        Write-TerminalLog "Fetching all installed packages..." "DEBUG"
-        $installedPackages = winget list --accept-source-agreements | Out-String
+        # If no AppIds provided, get all packages from config
+        if (-not $AppIds -or $AppIds.Count -eq 0) {
+            $packagesList = Get-WingetPackagesList
+            if (-not $packagesList.success) {
+                throw "Failed to get packages list: $($packagesList.error)"
+            }
+            $AppIds = $packagesList.packages | ForEach-Object { $_.app_id }
+        }
+        
+        Write-TerminalLog "Starting bulk status check for $($AppIds.Count) Winget packages" "DEBUG"
+        
+        $results = @()
         $currentTime = Get-Date
         
-        # Parse the output once
-        $packageLines = $installedPackages -split "`n" | 
-                       Where-Object { $_ -match '\S' } | 
-                       Select-Object -Skip 2  # Skip header lines
-        
-        # Process packages in parallel
-        $maxParallelJobs = 4  # Adjust based on system capabilities
-        $jobs = @()
-        $results = @{}
-        
-        # Create job scriptblock
-        $jobScript = {
-            param($appId, $packageLines)
+        # Process packages in smaller batches to avoid timeouts
+        $batchSize = 5
+        for ($i = 0; $i -lt $AppIds.Count; $i += $batchSize) {
+            $batch = $AppIds | Select-Object -Skip $i -First $batchSize
             
-            $status = @{
-                installed = $false
-                version = $null
-            }
-            
-            # Look for package in parsed output
-            foreach ($line in $packageLines) {
-                if ($line -match [regex]::Escape($appId)) {
-                    $parts = $line -split '\s+' | Where-Object { $_ }
-                    $status.installed = $true
-                    $status.version = $parts[1]
-                    break
+            foreach ($appId in $batch) {
+                if ([string]::IsNullOrWhiteSpace($appId)) {
+                    Write-TerminalLog "Skipping empty or null package ID" "WARNING"
+                    continue
+                }
+                
+                Write-TerminalLog "Checking status for package: $appId" "DEBUG"
+                try {
+                    # Get package info using PowerShell object handling
+                    $output = winget list --accept-source-agreements --source winget --id $appId | Out-String
+                    Write-TerminalLog "Raw output for $appId : $output" "DEBUG"
+                    
+                    $status = Get-WingetPackageStatusFromOutput -Output $output -AppId $appId
+                    
+                    # Update cache
+                    $script:WingetStatusCache[$appId] = $status
+                    $script:CacheTimestamps[$appId] = $currentTime
+                    
+                    $results += @{
+                        appId = $appId
+                        status = $status
+                    }
+                    
+                    # Log status with correct level
+                    if ($status.installed) {
+                        Write-TerminalLog "Winget package $appId is installed (version $($status.version))" "SUCCESS"
+                    } else {
+                        Write-TerminalLog "Winget package $appId is not installed" "INFO"
+                    }
+                }
+                catch {
+                    Write-TerminalLog "Error checking package $appId status: $($_.Exception.Message)" "ERROR"
+                    # Continue with other packages even if one fails
+                    $status = @{
+                        installed = $false
+                        version = $null
+                        name = $null
+                        source = $null
+                    }
+                    $script:WingetStatusCache[$appId] = $status
+                    $script:CacheTimestamps[$appId] = $currentTime
+                    $results += @{
+                        appId = $appId
+                        status = $status
+                    }
                 }
             }
             
-            return @{
-                appId = $appId
-                status = $status
+            # Small delay between batches to prevent rate limiting
+            if ($i + $batchSize -lt $AppIds.Count) {
+                Start-Sleep -Milliseconds 100
             }
         }
-        
-        # Process packages in batches
-        for ($i = 0; $i -lt $AppIds.Count; $i += $maxParallelJobs) {
-            $batch = $AppIds | Select-Object -Skip $i -First $maxParallelJobs
-            
-            # Start jobs for current batch
-            foreach ($appId in $batch) {
-                $jobs += Start-Job -ScriptBlock $jobScript -ArgumentList $appId, $packageLines
-            }
-            
-            # Wait for current batch to complete
-            $jobs | Wait-Job | Receive-Job | ForEach-Object {
-                $results[$_.appId] = $_
-                
-                # Update cache
-                $script:WingetStatusCache[$_.appId] = $_.status
-                $script:CacheTimestamps[$_.appId] = $currentTime
-            }
-            
-            # Clean up jobs
-            $jobs | Remove-Job
-            $jobs = @()
-        }
-        
-        # Return results in original order
-        $finalResults = $AppIds | ForEach-Object { $results[$_] }
         
         Write-TerminalLog "Bulk status check completed successfully" "SUCCESS"
-        return $finalResults
+        return @{
+            success = $true
+            results = $results
+        }
     }
     catch {
         Write-TerminalLog "Error during bulk status check: $($_.Exception.Message)" "ERROR"
-        throw
+        return @{
+            success = $false
+            error = $_.Exception.Message
+        }
     }
+}
+
+function Get-WingetPackageStatusFromOutput {
+    param (
+        [string]$Output,
+        [string]$AppId
+    )
+    
+    $status = @{
+        installed = $false
+        version = $null
+        name = $null
+        source = $null
+    }
+    
+    # Check if package is not installed
+    if ($Output -match "No installed package found matching input criteria") {
+        Write-TerminalLog "Package $AppId is not installed (no match found)" "DEBUG"
+        return $status
+    }
+    
+    # Parse the output lines
+    $lines = $Output -split "`n" | Where-Object { $_ -match '\S' }
+    Write-TerminalLog "Found $($lines.Count) non-empty lines in output" "DEBUG"
+    
+    Write-TerminalLog "Processing output lines for package data..." "DEBUG"
+    # Find the line with actual package data (after headers)
+    $packageLine = $lines | Where-Object { 
+        $_ -notmatch "^(-+|Name|Windows|\s*$|\s*[\-\\|])" -and 
+        $_ -match $AppId 
+    } | Select-Object -First 1
+    
+    Write-TerminalLog "Package line found: $packageLine" "DEBUG"
+    
+    if ($packageLine) {
+        Write-TerminalLog "Attempting to parse package line: '$packageLine'" "DEBUG"
+        # Try different patterns based on output format
+        if ($packageLine -match '^(.+?)\s+(\S+)\s+(\S+)\s*$') {
+            # Format: Name Id Version
+            $name = $matches[1].Trim()
+            $id = $matches[2]
+            $version = $matches[3]
+            Write-TerminalLog "Matched 3-column format - Name: '$name', Id: '$id', Version: '$version'" "DEBUG"
+            
+            if ($id -eq $AppId) {
+                Write-TerminalLog "Found exact ID match for $AppId" "DEBUG"
+                return @{
+                    installed = $true
+                    version = $version
+                    name = $name
+                    source = "winget"  # Default source if not specified
+                }
+            }
+        }
+        elseif ($packageLine -match '^(.+?)\s+(\S+)\s+(\S+)\s+(\S+)\s*$') {
+            # Format: Name Id Version Source
+            $name = $matches[1].Trim()
+            $id = $matches[2]
+            $version = $matches[3]
+            $source = $matches[4]
+            Write-TerminalLog "Matched 4-column format - Name: '$name', Id: '$id', Version: '$version', Source: '$source'" "DEBUG"
+            
+            if ($id -eq $AppId) {
+                Write-TerminalLog "Found exact ID match for $AppId" "DEBUG"
+                return @{
+                    installed = $true
+                    version = $version
+                    name = $name
+                    source = $source
+                }
+            }
+        }
+    }
+    
+    return $status
 }
 
 <#
@@ -201,29 +267,95 @@ function Get-WingetSinglePackageStatus {
     
     try {
         Write-TerminalLog "Checking status for package: $AppId" "DEBUG"
-        $result = winget list --id $AppId --accept-source-agreements | Out-String
+        
+        # Get package info using PowerShell object handling
+        $output = winget list --accept-source-agreements --source winget --id $AppId | Out-String
+        Write-TerminalLog "Raw output for $AppId : $output" "DEBUG"
+        
+        # Parse the output lines
+        $lines = $output -split "`n" | Where-Object { $_ -match '\S' }
+        Write-TerminalLog "Found $($lines.Count) non-empty lines in output" "DEBUG"
         
         $status = @{
             installed = $false
             version = $null
+            name = $null
+            source = $null
         }
         
-        $lines = $result -split "`n" | Where-Object { $_ -match '\S' }
-        foreach ($line in $lines) {
-            if ($line -match $AppId) {
-                $status.installed = $true
-                if ($line -match '^[^\s]+\s+([^\s]+)') {
-                    $status.version = $matches[1]
+        # Check if package is not installed
+        if ($output -match "No installed package found matching input criteria") {
+            Write-TerminalLog "Package $AppId is not installed (no match found)" "DEBUG"
+        }
+        else {
+            Write-TerminalLog "Processing output lines for package data..." "DEBUG"
+            # Find the line with actual package data (after headers)
+            $packageLine = $lines | Where-Object { 
+                $_ -notmatch "^(-+|Name|Windows|\s*$|\s*[\-\\|])" -and 
+                $_ -match $AppId 
+            } | Select-Object -First 1
+            
+            Write-TerminalLog "Package line found: $packageLine" "DEBUG"
+            
+            if ($packageLine) {
+                Write-TerminalLog "Attempting to parse package line: '$packageLine'" "DEBUG"
+                # Try different patterns based on output format
+                if ($packageLine -match '^(.+?)\s+(\S+)\s+(\S+)\s*$') {
+                    # Format: Name Id Version
+                    $name = $matches[1].Trim()
+                    $id = $matches[2]
+                    $version = $matches[3]
+                    Write-TerminalLog "Matched 3-column format - Name: '$name', Id: '$id', Version: '$version'" "DEBUG"
+                    
+                    if ($id -eq $AppId) {
+                        Write-TerminalLog "Found exact ID match for $AppId" "DEBUG"
+                        $status = @{
+                            installed = $true
+                            version = $version
+                            name = $name
+                            source = "winget"  # Default source if not specified
+                        }
+                    }
                 }
-                break
+                elseif ($packageLine -match '^(.+?)\s+(\S+)\s+(\S+)\s+(\S+)\s*$') {
+                    # Format: Name Id Version Source
+                    $name = $matches[1].Trim()
+                    $id = $matches[2]
+                    $version = $matches[3]
+                    $source = $matches[4]
+                    Write-TerminalLog "Matched 4-column format - Name: '$name', Id: '$id', Version: '$version', Source: '$source'" "DEBUG"
+                    
+                    if ($id -eq $AppId) {
+                        Write-TerminalLog "Found exact ID match for $AppId" "DEBUG"
+                        $status = @{
+                            installed = $true
+                            version = $version
+                            name = $name
+                            source = $source
+                        }
+                    }
+                }
+                else {
+                    Write-TerminalLog "Failed to match package line format: '$packageLine'" "WARNING"
+                }
+            }
+            else {
+                Write-TerminalLog "No package line found matching $AppId" "DEBUG"
             }
         }
+        
+        Write-TerminalLog "Final status for $AppId - Installed: $($status.installed), Version: $($status.version), Name: $($status.name)" "DEBUG"
         
         # Update cache with timestamp
         $script:WingetStatusCache[$AppId] = $status
         $script:CacheTimestamps[$AppId] = $currentTime
         
-        Write-TerminalLog "Status check completed for $AppId" "SUCCESS"
+        if ($status.installed) {
+            Write-TerminalLog "Winget package $AppId status: Installed v$($status.version)" "INFO"
+        } else {
+            Write-TerminalLog "Winget package $AppId status: Not Installed" "INFO"
+        }
+        
         return $status
     }
     catch {
@@ -254,10 +386,32 @@ function Install-WingetPackage {
         $result = winget install --exact --id $AppId --accept-source-agreements --accept-package-agreements
         Clear-PackageStatusCache
         
-        Write-TerminalLog "Successfully initiated installation of Winget package: $AppId" "SUCCESS"
+        # Add retry logic with maximum attempts
+        $retryCount = 0
+        $installed = $false
+        
+        while (-not $installed -and $retryCount -lt $script:MaxInstallCheckRetries) {
+            Start-Sleep -Seconds $script:RetryDelaySeconds
+            $status = Get-WingetSinglePackageStatus -AppId $AppId -ForceRefresh
+            
+            if ($status.installed) {
+                $installed = $true
+                Write-TerminalLog "Successfully installed Winget package $AppId (version: $($status.version))" "SUCCESS"
+            } else {
+                $retryCount++
+                Write-TerminalLog "Installation check attempt $retryCount of $script:MaxInstallCheckRetries for $AppId" "DEBUG"
+            }
+        }
+        
+        if (-not $installed) {
+            Write-TerminalLog "Installation status check exceeded maximum retries for $AppId" "WARNING"
+        }
+        
         return @{
             success = $true
             message = "Package installation initiated"
+            installed = $installed
+            finalStatus = $status
         }
     }
     catch {
@@ -291,10 +445,32 @@ function Uninstall-WingetPackage {
         $result = winget uninstall --exact --id $AppId
         Clear-PackageStatusCache
         
-        Write-TerminalLog "Successfully initiated uninstallation of Winget package: $AppId" "SUCCESS"
+        # Add retry logic with maximum attempts
+        $retryCount = 0
+        $uninstalled = $false
+        
+        while (-not $uninstalled -and $retryCount -lt $script:MaxInstallCheckRetries) {
+            Start-Sleep -Seconds $script:RetryDelaySeconds
+            $status = Get-WingetSinglePackageStatus -AppId $AppId -ForceRefresh
+            
+            if (-not $status.installed) {
+                $uninstalled = $true
+                Write-TerminalLog "Successfully uninstalled Winget package $AppId" "SUCCESS"
+            } else {
+                $retryCount++
+                Write-TerminalLog "Uninstallation check attempt $retryCount of $script:MaxInstallCheckRetries for $AppId" "DEBUG"
+            }
+        }
+        
+        if (-not $uninstalled) {
+            Write-TerminalLog "Uninstallation status check exceeded maximum retries for $AppId" "WARNING"
+        }
+        
         return @{
             success = $true
             message = "Package uninstallation initiated"
+            uninstalled = $uninstalled
+            finalStatus = $status
         }
     }
     catch {

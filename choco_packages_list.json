@@ -16,14 +16,10 @@
             "app_desc": "Software that extends your desktop to multiple devices"
         },
         {
-            "app_id": "backupper-standard",
-            "app_name": "AOMEI Backupper Standard",
-            "app_desc": "Free backup software for Windows"
-        },
-        {
             "app_id": "sql-server-2022",
             "app_name": "SQL Server 2022",
             "app_desc": "Relational database management system by Microsoft"
         }
+        
     ]
 } 
