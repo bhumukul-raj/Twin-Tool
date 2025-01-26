@@ -438,4 +438,221 @@ input:checked + .slider:before {
 
 .stop-icon {
     font-size: 12px;
+}
+
+/* Package Editor Styles */
+.editor-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.package-type-selector {
+    display: flex;
+    gap: 10px;
+}
+
+.selector-btn {
+    padding: 8px 16px;
+    background: #f0f2f5;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #586069;
+    transition: all 0.2s;
+}
+
+.selector-btn.active {
+    background: #2196F3;
+    color: white;
+}
+
+.add-package-btn {
+    padding: 8px 16px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.add-package-btn:hover {
+    background: #218838;
+}
+
+.add-package-btn span {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* Package Editor Grid */
+.package-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 10px;
+}
+
+.package-editor-card {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+.package-editor-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.package-editor-card .card-title {
+    margin: 0;
+    font-size: 16px;
+    color: #24292e;
+}
+
+.package-editor-card .card-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.package-editor-card .edit-btn,
+.package-editor-card .delete-btn {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: white;
+}
+
+.package-editor-card .edit-btn {
+    background: #0366d6;
+}
+
+.package-editor-card .delete-btn {
+    background: #d73a49;
+}
+
+.package-editor-card .card-content {
+    font-size: 14px;
+    color: #586069;
+}
+
+.package-editor-card .package-id {
+    font-family: monospace;
+    color: #24292e;
+    margin: 5px 0;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+}
+
+.modal-content {
+    position: relative;
+    background: white;
+    margin: 10% auto;
+    padding: 20px;
+    width: 90%;
+    max-width: 500px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.close-modal {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    font-size: 24px;
+    cursor: pointer;
+    color: #586069;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #24292e;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #e1e4e8;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.form-group textarea {
+    height: 100px;
+    resize: vertical;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.cancel-btn,
+.save-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.cancel-btn {
+    background: #e1e4e8;
+    color: #24292e;
+}
+
+.save-btn {
+    background: #2196F3;
+    color: white;
+}
+
+.save-btn:hover {
+    background: #1976D2;
+} 
+
+.no-packages {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px;
+    background: white;
+    border-radius: 8px;
+    color: #586069;
+    font-size: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 } 

@@ -1,24 +1,29 @@
 {
-    "packages": [
-        {
-            "app_id": "folder-marker",
-            "app_name": "Folder Marker",
-            "app_desc": "Software for changing folder icons"
-        },
-        {
-            "app_id": "bulk-crap-uninstaller",
-            "app_name": "Bulk Crap Uninstaller",
-            "app_desc": "Uninstaller for removing bloatware and unwanted programs"
-        },
-        {
-            "app_id": "firefox",
-            "app_name": "Mozilla Firefox",
-            "app_desc": "Open-source web browser"
-        },
-        {
-            "app_id": "spacedesk-server",
-            "app_name": "spacedesk server",
-            "app_desc": "Software that extends your desktop to multiple devices"
-        }          
-    ]
-} 
+    "packages":  [
+                     {
+                         "app_id":  "folder-marker",
+                         "app_name":  "Folder Marker",
+                         "app_desc":  "Software for changing folder icons"
+                     },
+                     {
+                         "app_id":  "bulk-crap-uninstaller",
+                         "app_name":  "Bulk Crap Uninstaller",
+                         "app_desc":  "Uninstaller for removing bloatware and unwanted programs"
+                     },
+                     {
+                         "app_id":  "firefox",
+                         "app_name":  "Mozilla Firefox",
+                         "app_desc":  "Open-source web browser"
+                     },
+                     {
+                         "app_id":  "spacedesk-server",
+                         "app_name":  "spacedesk server",
+                         "app_desc":  "Software that extends your desktop to multiple devices"
+                     },
+                     {
+                         "app_id":  "milton",
+                         "app_name":  "milton",
+                         "app_desc":  "miltom"
+                     }
+                 ]
+}

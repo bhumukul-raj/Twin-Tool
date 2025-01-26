@@ -16,6 +16,7 @@ $rootPath = Split-Path -Parent (Split-Path -Parent $scriptPath)
 . "$rootPath\src\services\chocoService.ps1"        # Chocolatey operations
 . "$rootPath\src\services\winget_package_status_Service.ps1"  # Package status management
 . "$rootPath\src\services\choco_package_status_Service.ps1"   # Chocolatey package status management
+. "$rootPath\src\services\packageEditorService.ps1"  # Package editor functionality
 
 Write-TerminalLog "Starting server initialization..." "INFO"
 
@@ -49,6 +50,74 @@ function Get-AvailablePort {
 $script:port = Get-AvailablePort
 $script:url = "http://localhost:$port/"
 $script:listener = $null
+$script:clientPath = Join-Path $rootPath "src\client\public"
+
+# MIME type mapping for static files
+$mimeTypes = @{
+    ".html" = "text/html"
+    ".css"  = "text/css"
+    ".js"   = "application/javascript"
+    ".json" = "application/json"
+    ".ico"  = "image/x-icon"
+    ".png"  = "image/png"
+    ".jpg"  = "image/jpeg"
+    ".gif"  = "image/gif"
+}
+
+# Function to get MIME type for a file
+function Get-MimeType {
+    param([string]$FilePath)
+    $extension = [System.IO.Path]::GetExtension($FilePath).ToLower()
+    if ($mimeTypes.ContainsKey($extension)) {
+        return $mimeTypes[$extension]
+    }
+    return "application/octet-stream"
+}
+
+# Function to serve static files
+function Serve-StaticFile {
+    param(
+        $Request,
+        $Response
+    )
+    
+    try {
+        # Get the requested path
+        $requestedPath = $Request.Url.LocalPath
+        if ($requestedPath -eq "/") {
+            $requestedPath = "/index.html"
+        }
+        
+        # Construct the full file path
+        $filePath = Join-Path $script:clientPath $requestedPath.TrimStart("/")
+        Write-TerminalLog "Attempting to serve file: $filePath" "DEBUG"
+        
+        if (Test-Path $filePath) {
+            try {
+                $content = Get-Content $filePath -Raw -Encoding UTF8
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($content)
+                
+                $Response.ContentType = Get-MimeType -FilePath $filePath
+                $Response.ContentLength64 = $buffer.Length
+                $Response.OutputStream.Write($buffer, 0, $buffer.Length)
+                
+                Write-TerminalLog "Successfully served file: $requestedPath" "DEBUG"
+                return $true
+            }
+            catch {
+                Write-TerminalLog "Error reading file $filePath : $($_.Exception.Message)" "ERROR"
+                return $false
+            }
+        }
+        
+        Write-TerminalLog "File not found: $filePath" "WARNING"
+        return $false
+    }
+    catch {
+        Write-TerminalLog "Error serving static file: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+}
 
 # CORS Configuration
 $corsHeaders = @{
@@ -106,7 +175,17 @@ function Start-PackageServer {
                 # Log incoming request details
                 Write-TerminalLog "Received $($request.HttpMethod) request: $($request.RawUrl)" "REQUEST"
                 
-                # Handle request based on endpoint path
+                # Try to serve static files first
+                if ($request.HttpMethod -eq "GET" -and -not $request.RawUrl.StartsWith("/api/")) {
+                    $served = Serve-StaticFile -Request $request -Response $response
+                    if ($served) {
+                        $response.Close()
+                        Write-TerminalLog "Sent response: $($response.StatusCode)" "RESPONSE"
+                        continue
+                    }
+                }
+                
+                # Handle API endpoints
                 $result = switch -Regex ($request.RawUrl) {
                     # Winget Version Endpoint
                     '/api/winget-version' {
@@ -118,8 +197,20 @@ function Start-PackageServer {
                     
                     # Winget Package List Endpoint
                     '/api/winget/packages-list' {
-                        Write-TerminalLog "Processing packages list request" "DEBUG"
-                        Get-WingetPackagesList
+                        Write-TerminalLog "Processing Winget packages list request" "DEBUG"
+                        $result = Get-PackageList -PackageType 'winget'
+                        if ($result.success) {
+                            @{
+                                success = $true
+                                packages = $result.packages
+                            }
+                        } else {
+                            $response.StatusCode = 500
+                            @{
+                                success = $false
+                                error = $result.error
+                            }
+                        }
                     }
                     
                     # Winget Bulk Package Status Endpoint
@@ -296,7 +387,19 @@ function Start-PackageServer {
                     # Chocolatey Package List Endpoint
                     '/api/choco/packages-list' {
                         Write-TerminalLog "Processing Chocolatey packages list request" "DEBUG"
-                        Get-ChocoPackagesList
+                        $result = Get-PackageList -PackageType 'choco'
+                        if ($result.success) {
+                            @{
+                                success = $true
+                                packages = $result.packages
+                            }
+                        } else {
+                            $response.StatusCode = 500
+                            @{
+                                success = $false
+                                error = $result.error
+                            }
+                        }
                     }
                     
                     # Chocolatey Bulk Package Status Endpoint
@@ -423,7 +526,30 @@ function Start-PackageServer {
                         }
                     }
                     
-                    # Handle Unknown Endpoints
+                    # Save Package List Endpoint
+                    '/api/save-package-list' {
+                        if ($request.HttpMethod -eq "POST") {
+                            try {
+                                $body = [System.IO.StreamReader]::new($request.InputStream).ReadToEnd()
+                                $data = $body | ConvertFrom-Json
+                                Save-PackageList -PackageType $data.packageType -Packages $data.packages
+                            }
+                            catch {
+                                Write-TerminalLog "Error saving package list: $($_.Exception.Message)" "ERROR"
+                                $response.StatusCode = 500
+                                @{
+                                    success = $false
+                                    error = $_.Exception.Message
+                                }
+                            }
+                        }
+                        else {
+                            $response.StatusCode = 405
+                            @{ error = "Method not allowed" }
+                        }
+                    }
+                    
+                    # Static file serving
                     default {
                         Write-TerminalLog "Received request for unknown endpoint: $($request.RawUrl)" "WARNING"
                         $response.StatusCode = 404
@@ -434,11 +560,21 @@ function Start-PackageServer {
                 }
                 
                 # Prepare and send response
-                $jsonResponse = $result | ConvertTo-Json -Depth 10
-                $buffer = [System.Text.Encoding]::UTF8.GetBytes($jsonResponse)
-                $response.ContentLength64 = $buffer.Length
-                $response.ContentType = "application/json"
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                if ($result) {
+                    $jsonResponse = $result | ConvertTo-Json -Depth 10 -Compress
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($jsonResponse)
+                    
+                    # Set response headers
+                    $response.ContentType = "application/json; charset=utf-8"
+                    $response.ContentLength64 = $buffer.Length
+                    $response.StatusCode = if ($response.StatusCode -eq 200) { 200 } else { $response.StatusCode }
+                    
+                    # Write response
+                    $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                    $response.OutputStream.Flush()
+                }
+                
+                # Always close the response
                 $response.Close()
                 
                 # Log response details
